@@ -17,7 +17,7 @@ const router = Router();
 router.get(
   "/albums", 
   isAuthenticatedUser, 
-  authorizeRoles(UserRole.JUDGE, UserRole.SUPER_ADMIN, UserRole.ADMIN), 
+  authorizeRoles(UserRole.JUDGE, UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.REGISTRAR), 
   galleryController.getAlbums
 );
 

@@ -214,7 +214,57 @@ const seedUsers: ISeedUser[] = [
     isVerified: true,
     needsPasswordReset: true,
   },
+  {
+    name: "Ken Mutua",
+    email: "kenmutua017@gmail.com",
+    password: "Welcome@2026",
+    role: UserRole.JUDGE,
+    isVerified: true,
+    needsPasswordReset: true,
+  },
+
+  {
+    name: "Judge Mbogholi Msagha",
+    email: "mbogholi@gmail.com",
+    password: "Welcome@2026",
+    role: UserRole.JUDGE,
+    isVerified: true,
+    needsPasswordReset: true,
+  },
+  {
+    name: "Hon. Jeff",
+    email: "jeffreysagirai@gmail.com",
+    password: "Welcome@2026",
+    role: UserRole.ADMIN,
+    isVerified: true,
+    needsPasswordReset: true,
+  },
+  {
+    name: "Joslyne Ndubi",
+    email: "joslynekathure@gmail.com",
+    password: "Welcome@2026",
+    role: UserRole.ADMIN,
+    isVerified: true,
+    needsPasswordReset: true,
+  },
+  {
+    name: "Hon. Winfridah B Mokaya",
+    email: "fmokaya23@gmail.com",
+    password: "Welcome@2026",
+    role: UserRole.REGISTRAR,
+    isVerified: true,
+    needsPasswordReset: true,
+  },
+  {
+    name: "Grace Omodho",
+    email: "omodhograce@gmail.com",
+    password: "Welcome@2026",
+    role: UserRole.REGISTRAR,
+    isVerified: true,
+    needsPasswordReset: true,
+  },
 ];
+
 
 
 

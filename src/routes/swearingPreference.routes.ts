@@ -22,32 +22,37 @@ const router = Router();
 router.get(
   "/me",
   isAuthenticatedUser,
-  authorizeRoles(UserRole.JUDGE),
+  authorizeRoles(UserRole.JUDGE, UserRole.REGISTRAR),
   getMyPreference,
 );
 
-// Save or Update own preference
-router.post("/save", isAuthenticatedUser, authorizeRoles(UserRole.JUDGE), saveSwearingPreference);
+// Save or Update own preference - REGISTRAR is NOT included here (Write Access Denied)
+router.post(
+  "/save", 
+  isAuthenticatedUser, 
+  authorizeRoles(UserRole.JUDGE), 
+  saveSwearingPreference
+);
 
 /* =====================================================
-    ADMINISTRATIVE ROUTES
+    READ-ONLY ACCESS (ADMIN & REGISTRAR)
 ===================================================== */
 
 /**
- * These routes are restricted to super_admin and admin only.
- * 'authorize' should check req.user.role.
+ * These routes allow the Registrar to view preferences
+ * along with the Admin and Super Admin.
  */
 router.get(
   "/get",
   isAuthenticatedUser,
-  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN),
+  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.REGISTRAR),
   getAllSwearingPreferences,
 );
 
 router.get(
   "/get/:userId",
   isAuthenticatedUser,
-  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN),
+  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.REGISTRAR),
   getPreferenceByUserId,
 );
 
