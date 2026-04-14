@@ -183,28 +183,18 @@ const emitConversationUpdated = (
 
 // ── Socket server ─────────────────────────────────────────────
 
+// ... (Keep existing imports and DB helpers)
+
 export const initSocket = (httpServer: HttpServer) => {
   const io = new Server(httpServer, {
-    cors: {
-      origin: config.FRONTEND_URL,
-      methods: ["GET", "POST"],
-      credentials: true,
-    },
+    cors: { origin: config.FRONTEND_URL, credentials: true },
   });
 
   const ADMIN_ROOM = "admin-support";
 
   io.on("connection", (socket: Socket) => {
-    const { userId, role, name } = socket.handshake.query as {
-      userId: string;
-      role: string;
-      name: string;
-    };
-
-    if (!userId || !role) {
-      socket.disconnect();
-      return;
-    }
+    const { userId, role, name } = socket.handshake.query as any;
+    if (!userId || !role) return socket.disconnect();
 
     const session = { userId, role, name };
     const isAdmin = role.toLowerCase().includes("admin");
@@ -213,87 +203,52 @@ export const initSocket = (httpServer: HttpServer) => {
     socket.join(`role:${role}`);
     if (isAdmin) socket.join(ADMIN_ROOM);
 
-    console.log(`[Socket] ✅ ${name} (${role}) connected`);
-
-    // ── Admin → single user ──────────────────────────────────
+    // ── Admin → single user (DIRECT) ──────────────────────────
     socket.on("admin:message:single", async (data: AdminSingleDTO) => {
       if (!isAdmin) return;
-
       const saved = await persistSingle(data);
+      if (!saved) return socket.emit("admin:message:error", { _tempId: data._tempId });
 
-      if (!saved) {
-        socket.emit("admin:message:error", { _tempId: data._tempId });
-        return;
-      }
-
-      // Deliver to recipient
-      io.to(data.recipientId).emit("user:receive", saved);
-
-      // Confirm to sender
+      io.to(data.recipientId).emit("user:receive", saved); // Direct event
       socket.emit("admin:message:sent", saved);
-
-      // Re-sort + badge update for both parties
-      // nonAdminUserId = recipientId because admin is the sender here
       emitConversationUpdated(io, saved, ADMIN_ROOM, data.recipientId);
     });
 
-    // ── Admin → broadcast (everyone) ────────────────────────
+    // ── Admin → broadcast (BROADCAST) ────────────────────────
     socket.on("admin:message:broadcast", async (data: AdminBroadcastDTO) => {
       if (!isAdmin) return;
-
       const saved = await persistBroadcast({ ...data, recipientType: "broadcast" });
+      if (!saved) return socket.emit("admin:message:error", { _tempId: data._tempId });
 
-      if (!saved) {
-        socket.emit("admin:message:error", { _tempId: data._tempId });
-        return;
-      }
-
-      io.emit("user:receive", saved);
+      io.emit("broadcast:receive", saved); // Specific Broadcast event
       socket.emit("admin:message:sent", saved);
-
       emitConversationUpdated(io, saved, ADMIN_ROOM);
     });
 
-    // ── Admin → group (specific roles) ───────────────────────
+    // ── Admin → group (BROADCAST for specific roles) ──────────
     socket.on("admin:message:group", async (data: AdminBroadcastDTO) => {
       if (!isAdmin) return;
-
       const saved = await persistBroadcast({ ...data, recipientType: "group" });
-
-      if (!saved) {
-        socket.emit("admin:message:error", { _tempId: data._tempId });
-        return;
-      }
+      if (!saved) return socket.emit("admin:message:error", { _tempId: data._tempId });
 
       if (saved.target_roles) {
-        saved.target_roles.forEach((r) => io.to(`role:${r}`).emit("user:receive", saved));
+        // Targeted Broadcast event
+        saved.target_roles.forEach((r) => io.to(`role:${r}`).emit("broadcast:receive", saved));
       }
       io.to(ADMIN_ROOM).emit("admin:receive", saved);
       socket.emit("admin:message:sent", saved);
-
       emitConversationUpdated(io, saved, ADMIN_ROOM);
     });
 
-    // ── Non-admin user → admin inbox ─────────────────────────
+    // ── User → Admin (DIRECT) ─────────────────────────────────
     socket.on("user:message", async (data: UserMessageDTO) => {
       if (isAdmin) return;
-
       const saved = await persistUserMessage(session, data);
-
-      if (!saved) {
-        socket.emit("user:message:error", { _tempId: data._tempId });
-        return;
-      }
+      if (!saved) return socket.emit("user:message:error", { _tempId: data._tempId });
 
       io.to(ADMIN_ROOM).emit("admin:receive", saved);
       socket.emit("user:message:sent", saved);
-
-      // nonAdminUserId = session.userId because the user is the sender here
       emitConversationUpdated(io, saved, ADMIN_ROOM, session.userId);
-    });
-
-    socket.on("disconnect", () => {
-      console.log(`[Socket] ❌ ${name} disconnected`);
     });
   });
 
