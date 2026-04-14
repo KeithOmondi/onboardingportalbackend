@@ -4,6 +4,7 @@ import {
   getConversationHistory,
   getBroadcasts,
   getJudgeHistory,
+  getBroadcastHistory,
   getJudgeSent,
   getJudgeInbox,
   getInbox,
@@ -16,43 +17,57 @@ import { UserRole } from "../interfaces/user.interface";
 
 const router = express.Router();
 
-router.use(isAuthenticatedUser); // all chat routes require auth
+router.use(isAuthenticatedUser);
 
-// Admin-only
+// ── Admin-only ─────────────────────────────────────────────────────────────
 router.get(
   "/recipients",
   authorizeRoles(UserRole.ADMIN, UserRole.SUPER_ADMIN),
-  getRecipients,
+  getRecipients
 );
 router.get(
   "/history/:userId",
-  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN),
-  getConversationHistory,
+  authorizeRoles(UserRole.ADMIN, UserRole.SUPER_ADMIN),
+  getConversationHistory
 );
 router.get(
   "/broadcasts",
   authorizeRoles(UserRole.ADMIN, UserRole.SUPER_ADMIN),
-  getBroadcasts,
+  getBroadcasts
 );
 
-// Judge/staff
+// ── Broadcast history — ALL authenticated roles ────────────────────────────
+// FIXED: single registration that includes every role that needs this endpoint
+router.get(
+  "/broadcast/history",
+  authorizeRoles(
+    UserRole.JUDGE,
+    UserRole.REGISTRAR,
+    UserRole.STAFF,
+    UserRole.ADMIN,
+    UserRole.SUPER_ADMIN
+  ),
+  getBroadcastHistory
+);
+
+// ── Judge / registrar / staff ──────────────────────────────────────────────
 router.get(
   "/judge/history",
-  authorizeRoles(UserRole.REGISTRAR, UserRole.JUDGE, UserRole.STAFF),
-  getJudgeHistory,
+  authorizeRoles(UserRole.JUDGE, UserRole.REGISTRAR, UserRole.STAFF),
+  getJudgeHistory
 );
 router.get(
   "/judge/sent",
-  authorizeRoles(UserRole.REGISTRAR, UserRole.JUDGE, UserRole.STAFF),
-  getJudgeSent,
+  authorizeRoles(UserRole.JUDGE, UserRole.REGISTRAR, UserRole.STAFF),
+  getJudgeSent
 );
 router.get(
   "/judge/inbox",
-  authorizeRoles(UserRole.REGISTRAR, UserRole.JUDGE, UserRole.STAFF),
-  getJudgeInbox,
+  authorizeRoles(UserRole.JUDGE, UserRole.REGISTRAR, UserRole.STAFF),
+  getJudgeInbox
 );
 
-// Shared
+// ── Shared ─────────────────────────────────────────────────────────────────
 router.get("/inbox", getInbox);
 
 export default router;

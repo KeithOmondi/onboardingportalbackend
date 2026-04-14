@@ -11,7 +11,7 @@ export const getRecipients = catchAsync(
     const result = await pool.query(
       `SELECT id, full_name, email, role, avatar_url
        FROM users
-       WHERE role IN ('judge', 'registrar', 'staff')
+       WHERE role::text IN ('judge', 'registrar', 'staff')
          AND is_verified = true
        ORDER BY role, full_name ASC`
     );
@@ -73,14 +73,21 @@ export const getJudgeHistory = catchAsync(
   async (req: Request, res: Response) => {
     const user = (req as any).user;
 
+    // DEBUG LOGS
+    console.log("--- DEBUG START ---");
+    console.log("User ID from Token:", user?.id);
+    console.log("User Role from Token:", user?.role);
+
     const result = await pool.query(
       `SELECT * FROM chat_messages
        WHERE (sender_id = $1 OR recipient_id = $1)
          AND recipient_type = 'single'
-       ORDER BY created_at ASC
-       LIMIT 100`,
+       ORDER BY created_at ASC`,
       [user.id]
     );
+
+    console.log("Rows Found in DB:", result.rowCount);
+    console.log("--- DEBUG END ---");
 
     res.status(200).json({
       status: "success",
@@ -94,13 +101,17 @@ export const getJudgeHistory = catchAsync(
 export const getBroadcastHistory = catchAsync(
   async (req: Request, res: Response) => {
     const user = (req as any).user;
+    const userRole = user.role.toLowerCase();
 
+    // LOWER(r) ensures case-insensitive matching with the target_roles array
     const result = await pool.query(
       `SELECT * FROM chat_messages
        WHERE recipient_type = 'broadcast'
-          OR (recipient_type = 'group' AND $1 = ANY(target_roles))
+          OR (recipient_type = 'group' AND EXISTS (
+                SELECT 1 FROM unnest(target_roles) AS r WHERE LOWER(r) = $1
+             ))
        ORDER BY created_at ASC`,
-      [user.role] // Make sure user.role matches the string in target_roles (e.g., 'judge')
+      [userRole]
     );
 
     res.status(200).json({
@@ -139,15 +150,18 @@ export const getJudgeSent = catchAsync(
 export const getJudgeInbox = catchAsync(
   async (req: Request, res: Response) => {
     const user = (req as any).user;
+    const userRole = user.role.toLowerCase();
 
     const result = await pool.query(
       `SELECT * FROM chat_messages
-       WHERE (recipient_id = $1 AND recipient_type = 'single') -- Direct replies to this judge
-          OR recipient_type = 'broadcast'                      -- Global announcements
-          OR (recipient_type = 'group' AND $2 = ANY(target_roles)) -- Role-based announcements
+       WHERE (recipient_id = $1 AND recipient_type = 'single') 
+          OR recipient_type = 'broadcast'
+          OR (recipient_type = 'group' AND EXISTS (
+                SELECT 1 FROM unnest(target_roles) AS r WHERE LOWER(r) = $2
+             ))
        ORDER BY created_at DESC
        LIMIT 50`,
-      [user.id, user.role]
+      [user.id, userRole]
     );
 
     res.status(200).json({
@@ -163,7 +177,7 @@ export const getInbox = catchAsync(
   async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
 
-    // Uses DISTINCT ON to show the last message from each user conversation
+    // DISTINCT ON requires ORDER BY conversation_partner
     const result = await pool.query(
       `SELECT DISTINCT ON (conversation_partner)
         id, sender_id, sender_name, sender_role, recipient_id, 
