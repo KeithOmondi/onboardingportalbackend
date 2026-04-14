@@ -105,12 +105,23 @@ const persistUserMessage = async (
   data: UserMessageDTO
 ): Promise<ChatMessageDB | null> => {
   try {
+    // 1. Identify the Admin ID. 
+    // If your system has multiple admins, you might need to pass the admin's ID 
+    // from the frontend in the 'data' payload.
+    const DEFAULT_ADMIN_ID = "00000000-0000-0000-0000-000000000000"; // Replace with actual Super Admin UUID
+
     const result = await pool.query(
       `INSERT INTO chat_messages
-         (sender_id, sender_name, sender_role, recipient_id, recipient_type, target_roles, message)
-       VALUES ($1, $2, $3, NULL, 'single', NULL, $4)
-       RETURNING *`,
-      [session.userId, session.name, session.role, data.message]
+          (sender_id, sender_name, sender_role, recipient_id, recipient_type, target_roles, message)
+        VALUES ($1, $2, $3, $4, 'single', NULL, $5)
+        RETURNING *`,
+      [
+        session.userId, 
+        session.name, 
+        session.role, 
+        data.sender_id || DEFAULT_ADMIN_ID, // Ensure recipient_id is NOT NULL
+        data.message
+      ]
     );
     return { ...result.rows[0], _tempId: data._tempId } as ChatMessageDB;
   } catch (err) {
