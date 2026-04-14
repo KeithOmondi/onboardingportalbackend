@@ -99,9 +99,8 @@ export const getBroadcastHistory = catchAsync(
       `SELECT * FROM chat_messages
        WHERE recipient_type = 'broadcast'
           OR (recipient_type = 'group' AND $1 = ANY(target_roles))
-       ORDER BY created_at ASC
-       LIMIT 100`,
-      [user.role]
+       ORDER BY created_at ASC`,
+      [user.role] // Make sure user.role matches the string in target_roles (e.g., 'judge')
     );
 
     res.status(200).json({
@@ -143,9 +142,9 @@ export const getJudgeInbox = catchAsync(
 
     const result = await pool.query(
       `SELECT * FROM chat_messages
-       WHERE (recipient_id = $1 AND recipient_type = 'single')
-          OR recipient_type = 'broadcast'
-          OR (recipient_type = 'group' AND $2 = ANY(target_roles))
+       WHERE (recipient_id = $1 AND recipient_type = 'single') -- Direct replies to this judge
+          OR recipient_type = 'broadcast'                      -- Global announcements
+          OR (recipient_type = 'group' AND $2 = ANY(target_roles)) -- Role-based announcements
        ORDER BY created_at DESC
        LIMIT 50`,
       [user.id, user.role]
