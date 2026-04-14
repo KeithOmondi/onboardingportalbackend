@@ -6,7 +6,6 @@ import {
   getMyGuestList,
   deleteGuestList,
   getAllGuestLists,
-  downloadAllGuestsPDF,
   downloadJudgeGuestPDF,
   getGuestListById,
 } from "../controllers/guests.controller";
@@ -47,15 +46,10 @@ router.get(
   getAllGuestLists
 );
 
-// Download master PDF of all guests
-router.get(
-  "/all/report", 
-  isAuthenticatedUser, 
-  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN), 
-  downloadAllGuestsPDF
-);
+
 
 // Download PDF for a specific user's registration
+// This matches your frontend call: api.get(`/guests/report/${userId}`)
 router.get(
   "/report/:userId", 
   isAuthenticatedUser, 
@@ -63,6 +57,7 @@ router.get(
   downloadJudgeGuestPDF
 );
 
+// Get full details of a single registration by Registry ID
 router.get(
   "/admin/:id",
   isAuthenticatedUser,

@@ -3,6 +3,8 @@ import { Server as HttpServer } from "http";
 import config from "../config/env";
 import pool from "../config/db";
 
+// ── Types ─────────────────────────────────────────────────────
+
 interface ChatMessageDB {
   id: string;
   sender_id: string;
@@ -13,7 +15,18 @@ interface ChatMessageDB {
   target_roles: string[] | null;
   message: string;
   created_at: Date;
-  _tempId?: string; // passed through from client, never stored in DB
+  _tempId?: string;
+}
+
+interface ConversationUpdatedPayload {
+  conversationId: string;   // always the non-admin user's id
+  lastMessage: string;
+  lastMessageAt: Date;
+  senderId: string;
+  senderName: string;
+  senderRole: string;
+  recipientType: "single" | "broadcast" | "group";
+  targetRoles?: string[] | null;
 }
 
 interface AdminSingleDTO {
@@ -53,11 +66,10 @@ const persistSingle = async (data: AdminSingleDTO): Promise<ChatMessageDB | null
     const result = await pool.query(
       `INSERT INTO chat_messages
          (sender_id, sender_name, sender_role, recipient_id, recipient_type, target_roles, message)
-       VALUES ($1, $2, $3, $4, $5, NULL, $6)
+       VALUES ($1, $2, $3, $4, 'single', NULL, $5)
        RETURNING *`,
-      [data.senderId, data.senderName, data.senderRole, data.recipientId, "single", data.message]
+      [data.senderId, data.senderName, data.senderRole, data.recipientId, data.message]
     );
-    // Attach _tempId so the client can match & replace its optimistic entry
     return { ...result.rows[0], _tempId: data._tempId } as ChatMessageDB;
   } catch (err) {
     console.error("[Socket] persistSingle error:", err);
@@ -93,7 +105,6 @@ const persistUserMessage = async (
   data: UserMessageDTO
 ): Promise<ChatMessageDB | null> => {
   try {
-    // Route non-admin messages to the admin inbox (recipient_id = NULL, type = 'single')
     const result = await pool.query(
       `INSERT INTO chat_messages
          (sender_id, sender_name, sender_role, recipient_id, recipient_type, target_roles, message)
@@ -105,6 +116,68 @@ const persistUserMessage = async (
   } catch (err) {
     console.error("[Socket] persistUserMessage error:", err);
     return null;
+  }
+};
+
+// ── conversation:updated emitter ──────────────────────────────
+
+/**
+ * Builds a ConversationUpdatedPayload from a saved message and fans it out
+ * to all parties who need to re-sort their conversation list or bump a badge.
+ *
+ * Convention: conversationId is ALWAYS the non-admin user's id so both
+ * the admin panel and the user's client share the same stable key.
+ *
+ *   single    → the non-admin is either the sender or the recipient
+ *   broadcast → no single user; conversationId is "broadcast"
+ *   group     → no single user; conversationId is "group:<roles>"
+ */
+const emitConversationUpdated = (
+  io: Server,
+  saved: ChatMessageDB,
+  adminRoom: string,
+  nonAdminUserId?: string   // caller supplies this; avoids re-deriving it here
+) => {
+  const conversationId =
+    saved.recipient_type === "single"
+      ? (nonAdminUserId ?? saved.recipient_id ?? saved.sender_id)
+      : saved.recipient_type === "group"
+      ? `group:${(saved.target_roles ?? []).join(",")}`
+      : "broadcast";
+
+  const payload: ConversationUpdatedPayload = {
+    conversationId,
+    lastMessage: saved.message,
+    lastMessageAt: saved.created_at,
+    senderId: saved.sender_id,
+    senderName: saved.sender_name,
+    senderRole: saved.sender_role,
+    recipientType: saved.recipient_type,
+    targetRoles: saved.target_roles,
+  };
+
+  switch (saved.recipient_type) {
+    case "single":
+      // Notify the non-admin user (badge++ if their convo isn't open)
+      if (nonAdminUserId) io.to(nonAdminUserId).emit("conversation:updated", payload);
+      // Notify all admins (re-sort their inbox)
+      io.to(adminRoom).emit("conversation:updated", payload);
+      break;
+
+    case "broadcast":
+      // Every connected socket needs to re-sort
+      io.emit("conversation:updated", payload);
+      break;
+
+    case "group":
+      // Only the targeted role rooms + admins
+      if (saved.target_roles) {
+        saved.target_roles.forEach((r) =>
+          io.to(`role:${r}`).emit("conversation:updated", payload)
+        );
+      }
+      io.to(adminRoom).emit("conversation:updated", payload);
+      break;
   }
 };
 
@@ -136,7 +209,6 @@ export const initSocket = (httpServer: HttpServer) => {
     const session = { userId, role, name };
     const isAdmin = role.toLowerCase().includes("admin");
 
-    // Join personal + role rooms
     socket.join(userId);
     socket.join(`role:${role}`);
     if (isAdmin) socket.join(ADMIN_ROOM);
@@ -145,23 +217,24 @@ export const initSocket = (httpServer: HttpServer) => {
 
     // ── Admin → single user ──────────────────────────────────
     socket.on("admin:message:single", async (data: AdminSingleDTO) => {
-      if (!isAdmin) return; // security: only admins may use this event
+      if (!isAdmin) return;
 
       const saved = await persistSingle(data);
 
       if (!saved) {
-        // Tell the sender their message failed; client removes the optimistic entry
         socket.emit("admin:message:error", { _tempId: data._tempId });
         return;
       }
 
-      // Deliver to recipient's personal room
+      // Deliver to recipient
       io.to(data.recipientId).emit("user:receive", saved);
 
-      // Echo the confirmed message (with DB id + _tempId) back to the SENDER only.
-      // The _tempId lets the client swap out the optimistic bubble for the real one.
-      // We emit to the sender's socket directly so only they receive this confirmation.
+      // Confirm to sender
       socket.emit("admin:message:sent", saved);
+
+      // Re-sort + badge update for both parties
+      // nonAdminUserId = recipientId because admin is the sender here
+      emitConversationUpdated(io, saved, ADMIN_ROOM, data.recipientId);
     });
 
     // ── Admin → broadcast (everyone) ────────────────────────
@@ -175,11 +248,10 @@ export const initSocket = (httpServer: HttpServer) => {
         return;
       }
 
-      // Broadcast to all connected sockets
       io.emit("user:receive", saved);
-
-      // Confirm back to sender
       socket.emit("admin:message:sent", saved);
+
+      emitConversationUpdated(io, saved, ADMIN_ROOM);
     });
 
     // ── Admin → group (specific roles) ───────────────────────
@@ -193,21 +265,18 @@ export const initSocket = (httpServer: HttpServer) => {
         return;
       }
 
-      // Deliver to each targeted role room
       if (saved.target_roles) {
         saved.target_roles.forEach((r) => io.to(`role:${r}`).emit("user:receive", saved));
       }
-
-      // Also fan out to admin room so all admins see it
       io.to(ADMIN_ROOM).emit("admin:receive", saved);
-
-      // Confirm back to sender
       socket.emit("admin:message:sent", saved);
+
+      emitConversationUpdated(io, saved, ADMIN_ROOM);
     });
 
     // ── Non-admin user → admin inbox ─────────────────────────
     socket.on("user:message", async (data: UserMessageDTO) => {
-      if (isAdmin) return; // admins don't use this event
+      if (isAdmin) return;
 
       const saved = await persistUserMessage(session, data);
 
@@ -216,11 +285,11 @@ export const initSocket = (httpServer: HttpServer) => {
         return;
       }
 
-      // Deliver to all admins
       io.to(ADMIN_ROOM).emit("admin:receive", saved);
-
-      // Confirm back to sender with DB id + _tempId so they can replace optimistic
       socket.emit("user:message:sent", saved);
+
+      // nonAdminUserId = session.userId because the user is the sender here
+      emitConversationUpdated(io, saved, ADMIN_ROOM, session.userId);
     });
 
     socket.on("disconnect", () => {
