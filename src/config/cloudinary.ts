@@ -10,33 +10,38 @@ cloudinary.config({
   secure: true,
 });
 
+/**
+ * Uploads a buffer-based file (from Multer) to Cloudinary.
+ * Handles both Images and Videos with specific optimizations.
+ */
 export const uploadToCloudinary = (
   file: Express.Multer.File,
   folder: string,
+  forcedType?: "image" | "video" | "auto" // Optional override if needed
 ): Promise<UploadApiResponse> => {
   return new Promise((resolve, reject) => {
     const isVideo = file.mimetype.startsWith("video");
 
     const options: UploadApiOptions = {
       folder: folder,
-      resource_type: "auto", // Automatically detects image vs video
+      resource_type: forcedType || "auto", // Uses auto-detection by default
     };
 
     if (isVideo) {
-      // VIDEO OPTIMIZATIONS
+      // ── VIDEO OPTIMIZATIONS ──
       options.transformation = [
-        { streaming_profile: "hd", format: "m3u8" }, // Prepare for HLS streaming
+        { streaming_profile: "hd", format: "m3u8" }, // Adaptive bitrate streaming
         { quality: "auto" }
       ];
       options.eager = [
         { width: 720, height: 480, crop: "pad", video_codec: "h264" },
-        { format: "jpg", resource_type: "video", frames: 1 } // Generate a thumbnail
+        { format: "jpg", resource_type: "video", frames: 1 } // Frame for video preview
       ];
-      options.eager_async = true; // Process heavy video transcoding in background
+      options.eager_async = true; // Background processing so request doesn't timeout
     } else {
-      // IMAGE OPTIMIZATIONS
+      // ── IMAGE OPTIMIZATIONS ──
       options.transformation = [
-        { width: 1200, crop: "limit", quality: "auto", fetch_format: "auto" },
+        { width: 1600, crop: "limit", quality: "auto", fetch_format: "auto" },
       ];
     }
 
@@ -44,14 +49,19 @@ export const uploadToCloudinary = (
       options,
       (error, result) => {
         if (error) return reject(error);
-        if (!result) return reject(new Error("Upload failed"));
+        if (!result) return reject(new Error("Cloudinary upload failed - no result returned"));
         resolve(result);
       },
     );
 
-    // Handle stream errors to prevent server crashes
+    // Stream the buffer to Cloudinary
     const stream = Readable.from(file.buffer);
-    stream.on("error", (err) => reject(err));
+    
+    stream.on("error", (err) => {
+      console.error("Stream Error:", err);
+      reject(err);
+    });
+
     stream.pipe(uploadStream);
   });
 };

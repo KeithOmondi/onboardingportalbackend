@@ -3,7 +3,6 @@ import bcrypt from 'bcrypt';
 import { UserRole } from './interfaces/user.interface';
 import pool from './config/db';
 
-// Define what a Seed User looks like (omitting DB-generated fields)
 interface ISeedUser {
   name: string;
   email: string;
@@ -13,11 +12,13 @@ interface ISeedUser {
   needsPasswordReset: boolean;
 }
 
+const DEFAULT_PASSWORD = "Welcome@2026";
+
 const seedUsers: ISeedUser[] = [
   {
     name: "Hon. Clara Otieno Omondi",
     email: "claraotieno23@gmail.com",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.ADMIN,
     isVerified: true,
     needsPasswordReset: true,
@@ -25,7 +26,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Hon. Dickson Odhiambo Onyango",
     email: "dickson.onyango@court.go.ke",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -33,7 +34,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Hon. Alex Kimanzi Ithuku",
     email: "ithukualex2014@gmail.com",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -41,7 +42,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Hon. Martha Wanzila Mutuku",
     email: "martha.mutuku@court.go.ke",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -49,7 +50,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Hon. Roseline Akinyi Oganyo",
     email: "roselyne.oganyo@court.go.ke",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -57,7 +58,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Hon. David Wanjohi Mburu",
     email: "dwmburu@gmail.com",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -65,7 +66,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Hon. Francis Nyungu Kyambia",
     email: "fnyungu@gmail.com",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -73,7 +74,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Hon. Richard Kipkemoi Koech",
     email: "richard.koech@court.go.ke",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -81,7 +82,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Dominic Kipkemoi Rono",
     email: "drkipkemoi2025@gmail.com",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -89,7 +90,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Dr. Nabil Mokaya Orina",
     email: "orinamokaya@gmail.com",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -97,7 +98,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Emmanuel Omondi Bitta",
     email: "bittaemmanuel@gmail.com",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -105,7 +106,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Hon. Kennedy Lenkamai Kandet",
     email: "kennedy.kandet@court.go.ke",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -113,7 +114,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Benard Wafula Murunga",
     email: "bertil75@gmail.com",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -121,7 +122,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Hon. Joyce Mkambe Gandani",
     email: "jgandani@court.go.ke",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -129,7 +130,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Judith Chelangat Mutai",
     email: "jelamutai@gmail.com",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -137,7 +138,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Abdi Mohamud Hassan",
     email: "advocateabdik@gmail.com",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -145,7 +146,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Catherine Akaigwa Kassim",
     email: "cathkassim@gmail.com",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -153,7 +154,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Hon. Letizia Muthoni Wachira Rwiga",
     email: "letiziawachira76@gmail.com",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -161,7 +162,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Hon. Paul Kipkemoi Mutai",
     email: "paulkipkemoi@yahoo.com",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -169,7 +170,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Winnie Narasha Molonko",
     email: "winniemolonko@yahoo.com",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -177,7 +178,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Joseph Kipkoech Biomdo",
     email: "biomdoj@yahoo.com",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -185,7 +186,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Hon. Joseph Maloba Were",
     email: "jmwere2015@gmail.com",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -193,7 +194,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Anne Mary Auma Okutoyi",
     email: "marieauma@gmail.com",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -201,7 +202,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Patricia Naeku Leparashao",
     email: "naekupat@gmail.com",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -209,7 +210,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Omondi Keith",
     email: "denniskeith62@gmail.com",
-    password: "Registrar@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -217,16 +218,15 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Ken Mutua",
     email: "kenmutua017@gmail.com",
-    password: "Welcome@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
   },
-
   {
     name: "Judge Mbogholi Msagha",
     email: "mbogholi@gmail.com",
-    password: "Welcome@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.JUDGE,
     isVerified: true,
     needsPasswordReset: true,
@@ -234,7 +234,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Hon. Jeff",
     email: "jeffreysagirai@gmail.com",
-    password: "Welcome@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.ADMIN,
     isVerified: true,
     needsPasswordReset: true,
@@ -242,7 +242,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Joslyne Ndubi",
     email: "joslynekathure@gmail.com",
-    password: "Welcome@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.ADMIN,
     isVerified: true,
     needsPasswordReset: true,
@@ -250,7 +250,7 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Hon. Winfridah B Mokaya",
     email: "fmokaya23@gmail.com",
-    password: "Welcome@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.REGISTRAR,
     isVerified: true,
     needsPasswordReset: true,
@@ -258,57 +258,59 @@ const seedUsers: ISeedUser[] = [
   {
     name: "Grace Omodho",
     email: "omodhograce@gmail.com",
-    password: "Welcome@2026",
+    password: DEFAULT_PASSWORD,
     role: UserRole.REGISTRAR,
     isVerified: true,
     needsPasswordReset: true,
   },
 ];
 
-
-
-
 export const seedDatabase = async (): Promise<void> => {
   try {
+    console.log('🔄 Starting Registry User sync...');
+    
     for (const user of seedUsers) {
-      const userExist = await pool.query('SELECT id FROM users WHERE email = $1', [user.email]);
-      
-      if (userExist.rowCount === 0) {
-        const hashedPassword = await bcrypt.hash(user.password, 10);
+      const hashedPassword = await bcrypt.hash(user.password, 10);
 
-        await pool.query(
-          `INSERT INTO users (full_name, email, password, role, is_verified, needs_password_reset) 
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [
-            user.name, 
-            user.email, 
-            hashedPassword, 
-            user.role, 
-            user.isVerified, 
-            user.needsPasswordReset
-          ]
-        );
-        console.log(`✅ Seeded user: ${user.email}`);
-      } else {
-        console.log(`ℹ️ User ${user.email} already exists, skipping.`);
-      }
+      /**
+       * UPSERT Logic:
+       * If email exists, update the password and details.
+       * If email doesn't exist, insert new record.
+       */
+      await pool.query(
+        `INSERT INTO users (full_name, email, password, role, is_verified, needs_password_reset) 
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (email) 
+         DO UPDATE SET 
+            full_name = EXCLUDED.full_name,
+            password = EXCLUDED.password,
+            role = EXCLUDED.role,
+            needs_password_reset = EXCLUDED.needs_password_reset`,
+        [
+          user.name, 
+          user.email, 
+          hashedPassword, 
+          user.role, 
+          user.isVerified, 
+          user.needsPasswordReset
+        ]
+      );
+      
+      console.log(`✅ Synced: ${user.email}`);
     }
-    console.log('🚀 Seeding completed successfully.');
+    
+    console.log('🚀 Registry seeding & updates completed successfully.');
   } catch (error) {
-    console.error('❌ Seeding failed:', error);
+    console.error('❌ Sync failed:', error);
     throw error;
   }
 };
 
-// --- ADD THIS BLOCK TO RUN DIRECTLY ---
 if (require.main === module) {
   seedDatabase()
-    .then(() => {
-      console.log('Finalizing...');
-      process.exit(0); // Exit safely
-    })
+    .then(() => process.exit(0))
     .catch((err) => {
       console.error('Fatal Seed Error:', err);
-      process.exit(1); // Exit with error
+      process.exit(1);
     });
 }
