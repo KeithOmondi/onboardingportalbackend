@@ -2,6 +2,8 @@
 import { Request, Response } from "express";
 import db from "../config/db"; // Your Postgres pool connection
 import { SwearingPreferencePayload } from "../interfaces/swearingPreference.interface";
+import puppeteer from "puppeteer";
+import { generatePreferencesHtml } from "../utils/pdfTemplates";
 
 /**
  * @desc    Save or Update Judge Swearing Preference
@@ -159,3 +161,65 @@ export const getPreferenceByUserId = async (req: Request, res: Response) => {
     });
   }
 };
+
+
+export const downloadPreferencesPDF = async (req: Request, res: Response) => {
+  // 1. Authorization Check
+  const userRole = req.user?.role;
+  if (userRole !== "super_admin" && userRole !== "admin") {
+    return res.status(403).json({ success: false, message: "Unauthorized access" });
+  }
+
+  let browser;
+  try {
+    // 2. Fetch Data
+    const { rows } = await db.query(`
+      SELECT sp.*, u.full_name 
+      FROM swearing_preferences sp
+      JOIN users u ON sp.user_id = u.id
+      ORDER BY u.full_name ASC
+    `);
+
+    // 3. Generate HTML from Template
+    const htmlContent = generatePreferencesHtml(rows);
+
+    // 4. Launch Puppeteer
+    // Optimization: Use --no-sandbox for Linux/Docker environments
+    browser = await puppeteer.launch({ 
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'] 
+    });
+    
+    const page = await browser.newPage();
+    
+    // Set content and wait for it to be ready
+    await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+
+    // 5. Generate PDF Buffer
+    const pdfBuffer = await page.pdf({ 
+      format: 'A4', 
+      printBackground: true,
+      margin: { top: '20px', bottom: '20px', left: '20px', right: '20px' }
+    });
+
+    // 6. Clean up browser immediately
+    await browser.close();
+
+    // 7. Send File
+    const filename = `Registry_Audit_${new Date().toISOString().split('T')[0]}.pdf`;
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+    
+    return res.send(pdfBuffer);
+
+  } catch (error) {
+    if (browser) await browser.close();
+    console.error("PDF_GENERATION_ERROR:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "An error occurred while generating the PDF report" 
+    });
+  }
+};
+

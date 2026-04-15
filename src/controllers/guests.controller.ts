@@ -3,52 +3,10 @@ import pool from "../config/db";
 import catchAsync from "../utils/catchAsync";
 import ErrorHandler from "../utils/ErrorHandler";
 import { IGuest } from "../interfaces/guests.interface";
+import { generateGuestListHtml } from "../utils/guestListTemplate";
+import puppeteer from "puppeteer";
 
-/**
- * CRITICAL FIX: 
- * We only need 'pdfmake' for the server-side printer.
- * REMOVE: pdfmake/build/pdfmake and pdfmake/build/vfs_fonts 
- * as they are for client-side/browser use only.
- */
-const PdfPrinter = require("pdfmake");
 
-/* =====================================================
-    HELPERS & STYLING
-===================================================== */
-
-const JUDICIARY_GREEN = "#1a3a32";
-const JUDICIARY_GOLD = "#c2a336";
-
-const pdfStyles = {
-  mainHeader: { fontSize: 16, bold: true, color: JUDICIARY_GREEN },
-  subHeader: { fontSize: 10, bold: true, color: JUDICIARY_GOLD, letterSpacing: 1 },
-  metaLabel: { fontSize: 8, bold: true, color: "#94a3b8", characterSpacing: 1 },
-  metaValue: { fontSize: 11, bold: true, color: "#1e293b" },
-  tableHeader: { fontSize: 9, bold: true, color: "#ffffff" },
-  tableCell: { fontSize: 9, color: "#334155" },
-  emptyState: { fontSize: 10, italics: true, color: "#94a3b8" },
-  footerNote: { fontSize: 7, italics: true, color: "#94a3b8" },
-};
-
-const buildTableBody = (guests: any[]) => {
-  const header = [
-    { text: "#", style: "tableHeader" },
-    { text: "Full Name", style: "tableHeader" },
-    { text: "Type", style: "tableHeader" },
-    { text: "ID / BC No.", style: "tableHeader" },
-    { text: "Phone", style: "tableHeader" },
-  ];
-
-  const rows = guests.map((g, index) => [
-    { text: String(index + 1), style: "tableCell", alignment: "center" },
-    { text: g.name ?? "—", style: "tableCell" },
-    { text: g.type?.toUpperCase() ?? "—", style: "tableCell", alignment: "center" },
-    { text: g.id_number || g.birth_cert_number || "N/A", style: "tableCell" },
-    { text: g.phone || "N/A", style: "tableCell" },
-  ]);
-
-  return [header, ...rows];
-};
 
 /* =====================================================
     USER / JUDGE HANDLERS
@@ -183,99 +141,237 @@ export const getGuestListById = catchAsync(
   }
 );
 
-/* =====================================================
-    PDF CONTROLLER
-===================================================== */
-
 export const downloadJudgeGuestPDF = catchAsync(
   async (req: Request, res: Response, next: NextFunction) => {
     const { userId } = req.params;
 
+    // 1. Fetch Data
     const dataQuery = `
       SELECT 
         u.full_name AS judge_name,
-        r.status,
-        r.updated_at,
         COALESCE(
           json_agg(g.* ORDER BY g.name ASC) FILTER (WHERE g.id IS NOT NULL),
           '[]'
         ) AS guests
       FROM users u
-      JOIN registrations r ON u.id::text = r.user_id
+      LEFT JOIN registrations r ON u.id::text = r.user_id
       LEFT JOIN guests g ON r.id = g.registration_id
       WHERE u.id::text = $1
-      GROUP BY u.id, r.id;
+      GROUP BY u.id;
     `;
 
     const result = await pool.query(dataQuery, [userId]);
-    if (result.rowCount === 0) return next(new ErrorHandler("No registration record found", 404));
+    if (result.rowCount === 0) return next(new ErrorHandler("Officer record not found", 404));
 
-    const record = result.rows[0];
-    const guests = record.guests || [];
-    const generatedAt = new Date().toLocaleString("en-KE", { timeZone: "Africa/Nairobi" });
+    const { judge_name, guests } = result.rows[0];
 
-    const docDefinition: any = {
-      pageMargins: [40, 60, 40, 60],
-      content: [
-        { text: "THE JUDICIARY OF KENYA", style: "mainHeader", alignment: "center" },
-        { text: "OFFICIAL GUEST REGISTRATION REPORT", style: "subHeader", alignment: "center", margin: [0, 4, 0, 0] },
-        {
-          canvas: [{ type: "line", x1: 0, y1: 8, x2: 515, y2: 8, lineWidth: 1.5, lineColor: JUDICIARY_GREEN }],
-          margin: [0, 10, 0, 20],
-        },
-        {
-          columns: [
-            { stack: [{ text: "OFFICER / JUDGE", style: "metaLabel" }, { text: record.judge_name, style: "metaValue" }] },
-            { stack: [{ text: "TOTAL GUESTS", style: "metaLabel" }, { text: String(guests.length), style: "metaValue" }], alignment: "right" },
-          ],
-        },
-        { text: " ", margin: [0, 10] },
-        guests.length === 0
-          ? { text: "No guests registered.", style: "emptyState", alignment: "center" }
-          : {
-              table: {
-                headerRows: 1,
-                widths: [20, "*", 50, 80, 80],
-                body: buildTableBody(guests),
-              },
-              layout: {
-                hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length ? 1 : 0.5),
-                vLineWidth: () => 0,
-                hLineColor: (i: number) => (i === 0 ? JUDICIARY_GREEN : "#e2e8f0"),
-                fillColor: (i: number) => (i === 0 ? JUDICIARY_GREEN : i % 2 === 0 ? "#f8fafc" : null),
-                paddingTop: () => 6,
-                paddingBottom: () => 6,
-              },
-            },
-        {
-          text: `Generated on ${generatedAt} · Judiciary Onboarding Portal`,
-          style: "footerNote",
-          alignment: "center",
-          margin: [0, 30, 0, 0],
-        },
-      ],
-      styles: pdfStyles,
-      defaultStyle: { font: "Helvetica" }, 
-    };
-
+    // 2. Setup Puppeteer
+    let browser;
     try {
-      const printer = new PdfPrinter({
-        Helvetica: {
-          normal: "Helvetica",
-          bold: "Helvetica-Bold",
-          italics: "Helvetica-Oblique",
-          bolditalics: "Helvetica-BoldOblique",
-        },
+      browser = await puppeteer.launch({
+        headless: true,
+        args: ["--no-sandbox", "--disable-setuid-sandbox"],
       });
 
-      const pdfDoc = printer.createPdfKitDocument(docDefinition);
+      const page = await browser.newPage();
+      const htmlContent = generateGuestListHtml(judge_name, guests);
+
+      await page.setContent(htmlContent, { waitUntil: "networkidle0" });
+
+      // 3. Generate PDF
+      const pdfBuffer = await page.pdf({
+        format: "A4",
+        printBackground: true,
+        margin: { top: "20px", bottom: "20px", left: "20px", right: "20px" },
+      });
+
+      await browser.close();
+
+      // 4. Stream to Client
+      const safeName = judge_name.replace(/\s+/g, "_");
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename=GuestList_${userId}.pdf`);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=GuestList_${safeName}.pdf`
+      );
+
+      return res.send(pdfBuffer);
+    } catch (error) {
+      if (browser) await browser.close();
+      return next(new ErrorHandler("Failed to generate Guest List PDF", 500));
+    }
+  }
+);
+
+// Add to guests.controller.ts
+
+export const exportAllGuestLists = catchAsync(
+  async (req: Request, res: Response, next: NextFunction) => {
+    // 1. Fetch all submitted registries with their guests
+    const query = `
+      SELECT 
+        u.full_name AS judge_name,
+        r.status,
+        COALESCE(json_agg(g.* ORDER BY g.name ASC) FILTER (WHERE g.id IS NOT NULL), '[]') AS guests
+      FROM registrations r
+      JOIN users u ON r.user_id = u.id::text
+      LEFT JOIN guests g ON r.id = g.registration_id
+      WHERE r.status = 'SUBMITTED'
+      GROUP BY r.id, u.full_name
+      ORDER BY u.full_name ASC;
+    `;
+
+    const result = await pool.query(query);
+
+    if (result.rowCount === 0) {
+      return next(new ErrorHandler("No submitted registries found to export", 404));
+    }
+
+    let browser;
+    try {
+      browser = await puppeteer.launch({
+        headless: true,
+        args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      });
+
+      const page = await browser.newPage();
       
-      pdfDoc.pipe(res);
-      pdfDoc.end();
-    } catch (err) {
-      return next(new ErrorHandler("PDF Generation Failed", 500));
+      // Professional Styles and Official Header
+      let combinedHtml = `
+        <html>
+        <head>
+          <style>
+            @page { margin: 25mm; }
+            body { 
+              font-family: 'Times New Roman', Times, serif; 
+              padding: 0; 
+              color: #1a1a1a;
+              line-height: 1.4;
+            }
+            .page-break { page-break-after: always; }
+            
+            /* Official Header */
+            .header { text-align: center; border-bottom: 3px double #1a3a32; margin-bottom: 30px; padding-bottom: 10px; }
+            .republic { font-weight: bold; font-size: 20px; letter-spacing: 2px; text-transform: uppercase; margin: 0; }
+            .office { font-size: 16px; font-weight: bold; margin: 5px 0; color: #355E3B; }
+            .report-title { font-size: 14px; text-decoration: underline; margin-top: 10px; font-weight: bold; }
+            
+            /* Meta Information */
+            .meta-data { font-size: 11px; margin-bottom: 20px; color: #444; }
+            
+            /* Section Styling */
+            .registrant-section { margin-top: 25px; }
+            .judge-name { 
+              background-color: #f1f5f9; 
+              padding: 8px; 
+              font-size: 14px; 
+              border-left: 4px solid #c2a336; 
+              color: #1a3a32;
+              font-weight: bold;
+              text-transform: uppercase;
+            }
+            
+            /* Table Styling */
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }
+            th { 
+              background-color: #1a3a32; 
+              color: #ffffff; 
+              text-transform: uppercase; 
+              padding: 8px; 
+              border: 1px solid #1a3a32;
+              letter-spacing: 0.5px;
+            }
+            td { padding: 8px; border: 1px solid #cbd5e1; }
+            tr:nth-child(even) { background-color: #f8fafc; }
+            
+            /* Official Footer Note */
+            .integrity-note { 
+              margin-top: 40px; 
+              font-size: 10px; 
+              color: #64748b; 
+              text-align: center; 
+              border-top: 1px solid #e2e8f0; 
+              padding-top: 10px; 
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <p class="republic">Republic of Kenya</p>
+            <p class="office">OFFICE OF THE REGISTRAR HIGH COURT</p>
+            <p class="report-title">COMPLIANCE AUDIT: CONSOLIDATED GUEST LIST</p>
+          </div>
+          
+          <div class="meta-data">
+            <strong>GEN_DATE:</strong> ${new Date().toLocaleString('en-GB')}<br/>
+          </div>
+      `;
+
+      result.rows.forEach((row: any, index: number) => {
+        combinedHtml += `
+          <div class="registrant-section">
+            <div class="judge-name">Registrant: ${row.judge_name}</div>
+            <table>
+              <thead>
+                <tr>
+                  <th width="5%">#</th>
+                  <th width="35%">Guest Full Name</th>
+                  <th width="15%">Category</th>
+                  <th width="25%">ID / Birth Certificate</th>
+                  <th width="20%">Phone Contact</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${row.guests.map((g: any, i: number) => `
+                  <tr>
+                    <td>${i + 1}</td>
+                    <td><strong>${g.name}</strong></td>
+                    <td>${g.type}</td>
+                    <td>${g.id_number || g.birth_cert_number || '---'}</td>
+                    <td>${g.phone || 'N/A'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+          
+          ${index < result.rows.length - 1 ? '<div class="page-break"></div>' : ''}
+        `;
+      });
+
+      // Close the document with an integrity note similar to ORHC-2026-8267
+      combinedHtml += `
+          <div class="integrity-note">
+            <p><strong>NOTE ON INTEGRITY</strong></p>
+            <p>This report is an official extract from the High Court Judges Onboarding Portal. 
+            Any alteration to this document is a criminal offense under the Computer Misuse and Cybercrimes Act.</p>
+            <p><strong>ELECTRONICALLY SIGNED BY THE REGISTRAR</strong></p>
+          </div>
+        </body>
+        </html>
+      `;
+
+      await page.setContent(combinedHtml, { waitUntil: "networkidle0" });
+      const pdfBuffer = await page.pdf({ 
+        format: "A4", 
+        printBackground: true,
+        displayHeaderFooter: true,
+        footerTemplate: `
+          <div style="font-size: 9px; text-align: center; width: 100%; font-family: 'Times New Roman';">
+            Page <span class="pageNumber"></span> of <span class="totalPages"></span> - Office of the Registrar High Court
+          </div>`,
+        margin: { top: '25mm', bottom: '20mm', left: '20mm', right: '20mm' }
+      });
+
+      await browser.close();
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename=Consolidated_Registry_${new Date().toISOString().split('T')[0]}.pdf`);
+      return res.send(pdfBuffer);
+    } catch (error) {
+      if (browser) await browser.close();
+      console.error("PDF Export Error:", error);
+      return next(new ErrorHandler("Failed to generate Consolidated PDF", 500));
     }
   }
 );

@@ -8,6 +8,7 @@ import {
   getAllGuestLists,
   downloadJudgeGuestPDF,
   getGuestListById,
+  exportAllGuestLists, // 1. Import the new controller
 } from "../controllers/guests.controller";
 import { authorizeRoles, isAuthenticatedUser } from "../middleware/authMiddleware";
 import { UserRole } from "../interfaces/user.interface";
@@ -18,27 +19,21 @@ const router = Router();
     USER / JUDGE ROUTES (Authenticated)
    ===================================================== */
 
-// Save as Draft (creates or updates the current draft)
 router.post("/save", isAuthenticatedUser, saveGuestList);
-
-// Finalize registry (switches status from DRAFT to SUBMITTED)
 router.post("/submit", isAuthenticatedUser, submitGuestList);
-
-// Append more guests to an existing list
 router.patch("/add", isAuthenticatedUser, addGuests);
-
-// Fetch the logged-in user's specific registry
 router.get("/me", isAuthenticatedUser, getMyGuestList);
-
-// Delete registry (Logic handles checking if it's still a DRAFT)
 router.delete("/delete", isAuthenticatedUser, deleteGuestList);
 
 
 /* =====================================================
-    ADMIN ROUTES (Authenticated + Role Restricted)
+    ADMIN ROUTES (Super Admin & Admin only)
    ===================================================== */
 
-// View all guest registrations across the system
+/**
+ * @route   GET /api/v1/guests/admin/all
+ * @desc    Get overview of all guest registrations
+ */
 router.get(
   "/admin/all", 
   isAuthenticatedUser, 
@@ -46,23 +41,39 @@ router.get(
   getAllGuestLists
 );
 
-
-
-// Download PDF for a specific user's registration
-// This matches your frontend call: api.get(`/guests/report/${userId}`)
+/**
+ * @route   GET /api/v1/guests/admin/export-all
+ * @desc    Bulk Export: Generate one consolidated PDF for all submitted registries
+ * @access  Super Admin only (or Admin depending on your policy)
+ */
 router.get(
-  "/report/:userId", 
-  isAuthenticatedUser, 
-  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN), 
-  downloadJudgeGuestPDF
+  "/admin/export-all",
+  isAuthenticatedUser,
+  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN),
+  exportAllGuestLists
 );
 
-// Get full details of a single registration by Registry ID
+/**
+ * @route   GET /api/v1/guests/admin/:id
+ * @desc    Get details of a specific registration (by Registry UUID)
+ * @note    PLACED AFTER export-all to avoid route parameter collision
+ */
 router.get(
   "/admin/:id",
   isAuthenticatedUser,
   authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN),
   getGuestListById
+);
+
+/**
+ * @route   GET /api/v1/guests/report/:userId
+ * @desc    Generate and download PDF Report for a specific Judge
+ */
+router.get(
+  "/report/:userId", 
+  isAuthenticatedUser, 
+  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN), 
+  downloadJudgeGuestPDF
 );
 
 export default router;

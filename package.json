@@ -25,7 +25,9 @@
     "nodemailer": "^8.0.5",
     "pdfmake": "^0.3.7",
     "pg": "^8.20.0",
-    "socket.io": "^4.8.3"
+    "puppeteer": "^24.40.0",
+    "socket.io": "^4.8.3",
+    "weasyprint": "^0.1.7"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",

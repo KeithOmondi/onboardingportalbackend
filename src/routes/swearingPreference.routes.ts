@@ -5,6 +5,7 @@ import {
   getMyPreference,
   getAllSwearingPreferences,
   getPreferenceByUserId,
+  downloadPreferencesPDF,
 } from "../controllers/swearingPreference.controller";
 import {
   authorizeRoles,
@@ -54,6 +55,17 @@ router.get(
   isAuthenticatedUser,
   authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.REGISTRAR),
   getPreferenceByUserId,
+);
+
+/**
+ * Generates and downloads a PDF report of all preferences.
+ * Accessible by Admins and Registrars for ceremony planning.
+ */
+router.get(
+  "/download-report",
+  isAuthenticatedUser,
+  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN),
+  downloadPreferencesPDF
 );
 
 export default router;
