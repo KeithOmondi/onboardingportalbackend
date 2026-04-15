@@ -145,7 +145,6 @@ export const downloadJudgeGuestPDF = catchAsync(
   async (req: Request, res: Response, next: NextFunction) => {
     const { userId } = req.params;
 
-    // 1. Fetch Data
     const dataQuery = `
       SELECT 
         u.full_name AS judge_name,
@@ -165,20 +164,24 @@ export const downloadJudgeGuestPDF = catchAsync(
 
     const { judge_name, guests } = result.rows[0];
 
-    // 2. Setup Puppeteer
     let browser;
     try {
       browser = await puppeteer.launch({
-        headless: true,
-        args: ["--no-sandbox", "--disable-setuid-sandbox"],
-      });
+  headless: true,
+  args: [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--single-process",
+  ],
+});
 
       const page = await browser.newPage();
       const htmlContent = generateGuestListHtml(judge_name, guests);
 
       await page.setContent(htmlContent, { waitUntil: "networkidle0" });
 
-      // 3. Generate PDF
       const pdfBuffer = await page.pdf({
         format: "A4",
         printBackground: true,
@@ -187,7 +190,6 @@ export const downloadJudgeGuestPDF = catchAsync(
 
       await browser.close();
 
-      // 4. Stream to Client
       const safeName = judge_name.replace(/\s+/g, "_");
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader(
@@ -198,16 +200,14 @@ export const downloadJudgeGuestPDF = catchAsync(
       return res.send(pdfBuffer);
     } catch (error) {
       if (browser) await browser.close();
+      console.error("PDF Export Error:", error);
       return next(new ErrorHandler("Failed to generate Guest List PDF", 500));
     }
   }
 );
 
-// Add to guests.controller.ts
-
 export const exportAllGuestLists = catchAsync(
   async (req: Request, res: Response, next: NextFunction) => {
-    // 1. Fetch all submitted registries with their guests
     const query = `
       SELECT 
         u.full_name AS judge_name,
@@ -230,13 +230,18 @@ export const exportAllGuestLists = catchAsync(
     let browser;
     try {
       browser = await puppeteer.launch({
-        headless: true,
-        args: ["--no-sandbox", "--disable-setuid-sandbox"],
-      });
+  headless: true,
+  args: [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--single-process",
+  ],
+});
 
       const page = await browser.newPage();
-      
-      // Professional Styles and Official Header
+
       let combinedHtml = `
         <html>
         <head>
@@ -250,16 +255,13 @@ export const exportAllGuestLists = catchAsync(
             }
             .page-break { page-break-after: always; }
             
-            /* Official Header */
             .header { text-align: center; border-bottom: 3px double #1a3a32; margin-bottom: 30px; padding-bottom: 10px; }
             .republic { font-weight: bold; font-size: 20px; letter-spacing: 2px; text-transform: uppercase; margin: 0; }
             .office { font-size: 16px; font-weight: bold; margin: 5px 0; color: #355E3B; }
             .report-title { font-size: 14px; text-decoration: underline; margin-top: 10px; font-weight: bold; }
             
-            /* Meta Information */
             .meta-data { font-size: 11px; margin-bottom: 20px; color: #444; }
             
-            /* Section Styling */
             .registrant-section { margin-top: 25px; }
             .judge-name { 
               background-color: #f1f5f9; 
@@ -271,7 +273,6 @@ export const exportAllGuestLists = catchAsync(
               text-transform: uppercase;
             }
             
-            /* Table Styling */
             table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }
             th { 
               background-color: #1a3a32; 
@@ -284,7 +285,6 @@ export const exportAllGuestLists = catchAsync(
             td { padding: 8px; border: 1px solid #cbd5e1; }
             tr:nth-child(even) { background-color: #f8fafc; }
             
-            /* Official Footer Note */
             .integrity-note { 
               margin-top: 40px; 
               font-size: 10px; 
@@ -339,7 +339,6 @@ export const exportAllGuestLists = catchAsync(
         `;
       });
 
-      // Close the document with an integrity note similar to ORHC-2026-8267
       combinedHtml += `
           <div class="integrity-note">
             <p><strong>NOTE ON INTEGRITY</strong></p>
@@ -352,8 +351,9 @@ export const exportAllGuestLists = catchAsync(
       `;
 
       await page.setContent(combinedHtml, { waitUntil: "networkidle0" });
-      const pdfBuffer = await page.pdf({ 
-        format: "A4", 
+
+      const pdfBuffer = await page.pdf({
+        format: "A4",
         printBackground: true,
         displayHeaderFooter: true,
         footerTemplate: `
@@ -368,6 +368,7 @@ export const exportAllGuestLists = catchAsync(
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename=Consolidated_Registry_${new Date().toISOString().split('T')[0]}.pdf`);
       return res.send(pdfBuffer);
+
     } catch (error) {
       if (browser) await browser.close();
       console.error("PDF Export Error:", error);
