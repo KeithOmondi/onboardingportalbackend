@@ -4,9 +4,8 @@ import catchAsync from "../utils/catchAsync";
 import ErrorHandler from "../utils/ErrorHandler";
 import { IGuest } from "../interfaces/guests.interface";
 import { generateGuestListHtml } from "../utils/guestListTemplate";
-import puppeteer from "puppeteer";
-
-
+import puppeteer from "puppeteer-core";
+import chromium from "@sparticuz/chromium";
 
 /* =====================================================
     USER / JUDGE HANDLERS
@@ -167,14 +166,10 @@ export const downloadJudgeGuestPDF = catchAsync(
     let browser;
     try {
       browser = await puppeteer.launch({
+  args: chromium.args,
+  defaultViewport: { width: 1280, height: 720 },
+  executablePath: await chromium.executablePath(),
   headless: true,
-  args: [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-gpu",
-    "--single-process",
-  ],
 });
 
       const page = await browser.newPage();
@@ -230,14 +225,10 @@ export const exportAllGuestLists = catchAsync(
     let browser;
     try {
       browser = await puppeteer.launch({
+  args: chromium.args,
+  defaultViewport: { width: 1280, height: 720 },
+  executablePath: await chromium.executablePath(),
   headless: true,
-  args: [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-gpu",
-    "--single-process",
-  ],
 });
 
       const page = await browser.newPage();
