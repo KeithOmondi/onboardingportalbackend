@@ -8,7 +8,9 @@ import {
   getAllGuestLists,
   downloadJudgeGuestPDF,
   getGuestListById,
-  exportAllGuestLists, // 1. Import the new controller
+  exportAllGuestLists,      // PDF
+  exportAllGuestListsExcel, // Excel
+  exportAllGuestListsWord,  // Word
 } from "../controllers/guests.controller";
 import { authorizeRoles, isAuthenticatedUser } from "../middleware/authMiddleware";
 import { UserRole } from "../interfaces/user.interface";
@@ -43,8 +45,7 @@ router.get(
 
 /**
  * @route   GET /api/v1/guests/admin/export-all
- * @desc    Bulk Export: Generate one consolidated PDF for all submitted registries
- * @access  Super Admin only (or Admin depending on your policy)
+ * @desc    Bulk Export: Generate one consolidated PDF
  */
 router.get(
   "/admin/export-all",
@@ -54,9 +55,31 @@ router.get(
 );
 
 /**
+ * @route   GET /api/v1/guests/admin/export-excel
+ * @desc    Bulk Export: Generate a consolidated Excel sheet
+ */
+router.get(
+  "/admin/export-excel",
+  isAuthenticatedUser,
+  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN),
+  exportAllGuestListsExcel
+);
+
+/**
+ * @route   GET /api/v1/guests/admin/export-word
+ * @desc    Bulk Export: Generate a consolidated Word document
+ */
+router.get(
+  "/admin/export-word",
+  isAuthenticatedUser,
+  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN),
+  exportAllGuestListsWord
+);
+
+/**
  * @route   GET /api/v1/guests/admin/:id
- * @desc    Get details of a specific registration (by Registry UUID)
- * @note    PLACED AFTER export-all to avoid route parameter collision
+ * @desc    Get details of a specific registration
+ * @note    IMPORTANT: Must stay below all specific /admin/... routes
  */
 router.get(
   "/admin/:id",

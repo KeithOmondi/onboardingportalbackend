@@ -6,6 +6,8 @@ import { IGuest } from "../interfaces/guests.interface";
 import { generateGuestListHtml } from "../utils/guestListTemplate";
 import puppeteer from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
+import * as ExcelJS from "exceljs";
+import { Document, Packer, Paragraph, Table, TableRow, TableCell, WidthType, HeadingLevel, AlignmentType } from "docx";
 
 /* =====================================================
     USER / JUDGE HANDLERS
@@ -365,5 +367,122 @@ export const exportAllGuestLists = catchAsync(
       console.error("PDF Export Error:", error);
       return next(new ErrorHandler("Failed to generate Consolidated PDF", 500));
     }
+  }
+);
+
+
+
+export const exportAllGuestListsExcel = catchAsync(
+  async (req: Request, res: Response, next: NextFunction) => {
+    const query = `
+      SELECT u.full_name AS judge_name, g.*
+      FROM registrations r
+      JOIN users u ON r.user_id = u.id::text
+      JOIN guests g ON r.id = g.registration_id
+      WHERE r.status = 'SUBMITTED'
+      ORDER BY u.full_name ASC, g.name ASC;
+    `;
+
+    const result = await pool.query(query);
+    if (result.rowCount === 0) return next(new ErrorHandler("No data to export", 404));
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Consolidated Guest List");
+
+    // Define Columns
+    worksheet.columns = [
+      { header: "Registrant (Judge)", key: "judge_name", width: 25 },
+      { header: "Guest Name", key: "name", width: 25 },
+      { header: "Category", key: "type", width: 15 },
+      { header: "Gender", key: "gender", width: 10 },
+      { header: "ID / Birth Cert", key: "identity", width: 20 },
+      { header: "Phone", key: "phone", width: 15 },
+      { header: "Email", key: "email", width: 25 },
+    ];
+
+    // Style Header
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF1A3A32' }
+    };
+    worksheet.getRow(1).font = { color: { argb: 'FFFFFFFF' }, bold: true };
+
+    // Add Rows
+    result.rows.forEach((row) => {
+      worksheet.addRow({
+        judge_name: row.judge_name,
+        name: row.name,
+        type: row.type,
+        gender: row.gender,
+        identity: row.id_number || row.birth_cert_number || "N/A",
+        phone: row.phone,
+        email: row.email,
+      });
+    });
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", "attachment; filename=GuestList_Export.xlsx");
+
+    await workbook.xlsx.write(res);
+    res.end();
+  }
+);
+
+
+
+export const exportAllGuestListsWord = catchAsync(
+  async (req: Request, res: Response, next: NextFunction) => {
+    const query = `
+      SELECT r.id, u.full_name AS judge_name, 
+      COALESCE(json_agg(g.* ORDER BY g.name ASC) FILTER (WHERE g.id IS NOT NULL), '[]') AS guests
+      FROM registrations r
+      JOIN users u ON r.user_id = u.id::text
+      LEFT JOIN guests g ON r.id = g.registration_id
+      WHERE r.status = 'SUBMITTED'
+      GROUP BY r.id, u.full_name
+    `;
+
+    const result = await pool.query(query);
+
+    const doc = new Document({
+      sections: [{
+        properties: {},
+        children: [
+          new Paragraph({ text: "REPUBLIC OF KENYA", heading: HeadingLevel.HEADING_1, alignment: AlignmentType.CENTER }),
+          new Paragraph({ text: "OFFICE OF THE REGISTRAR HIGH COURT", alignment: AlignmentType.CENTER }),
+          new Paragraph({ text: "CONSOLIDATED GUEST LIST REPORT", alignment: AlignmentType.CENTER, spacing: { after: 400 } }),
+          
+          ...result.rows.flatMap((row) => [
+            new Paragraph({ text: `Registrant: ${row.judge_name}`, heading: HeadingLevel.HEADING_3, spacing: { before: 200 } }),
+            new Table({
+              width: { size: 100, type: WidthType.PERCENTAGE },
+              rows: [
+                new TableRow({
+                  children: [
+                    new TableCell({ children: [new Paragraph("Name")] }),
+                    new TableCell({ children: [new Paragraph("Category")] }),
+                    new TableCell({ children: [new Paragraph("ID / Phone")] }),
+                  ],
+                }),
+                ...row.guests.map((g: any) => new TableRow({
+                  children: [
+                    new TableCell({ children: [new Paragraph(g.name)] }),
+                    new TableCell({ children: [new Paragraph(g.type)] }),
+                    new TableCell({ children: [new Paragraph(`${g.id_number || g.birth_cert_number || 'N/A'}`)] }),
+                  ],
+                })),
+              ],
+            }),
+          ]),
+        ],
+      }],
+    });
+
+    const buffer = await Packer.toBuffer(doc);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    res.setHeader("Content-Disposition", "attachment; filename=GuestList_Export.docx");
+    res.send(buffer);
   }
 );

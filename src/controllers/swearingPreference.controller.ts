@@ -5,6 +5,8 @@ import { SwearingPreferencePayload } from "../interfaces/swearingPreference.inte
 import puppeteer from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
 import { generatePreferencesHtml } from "../utils/pdfTemplates";
+import ExcelJS from "exceljs";
+import { Document, Packer, Paragraph, Table, TableRow, TableCell, WidthType, HeadingLevel, AlignmentType, TextRun } from "docx";
 
 /**
  * @desc    Save or Update Judge Swearing Preference
@@ -212,5 +214,128 @@ export const downloadPreferencesPDF = async (req: Request, res: Response) => {
       success: false,
       message: "An error occurred while generating the PDF report",
     });
+  }
+};
+
+
+
+/**
+ * @desc    Export All Swearing Preferences as Excel
+ * @route   GET /api/v1/swearing-preferences/export-excel
+ */
+export const exportPreferencesExcel = async (req: Request, res: Response) => {
+  try {
+    const { rows } = await db.query(`
+      SELECT sp.ceremony_choice, sp.religious_text, sp.updated_at, u.full_name 
+      FROM swearing_preferences sp
+      JOIN users u ON sp.user_id = u.id
+      ORDER BY u.full_name ASC
+    `);
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Swearing Preferences");
+
+    worksheet.columns = [
+      { header: "Judge Name", key: "full_name", width: 30 },
+      { header: "Choice", key: "ceremony_choice", width: 15 },
+      { header: "Religious Text", key: "religious_text", width: 25 },
+      { header: "Last Updated", key: "updated_at", width: 20 },
+    ];
+
+    // Style the header
+    worksheet.getRow(1).font = { bold: true };
+
+    rows.forEach((row) => {
+      worksheet.addRow({
+        full_name: row.full_name,
+        ceremony_choice: row.ceremony_choice.toUpperCase(),
+        religious_text: row.religious_text || "N/A",
+        updated_at: new Date(row.updated_at).toLocaleDateString(),
+      });
+    });
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename=Swearing_Preferences_${Date.now()}.xlsx`);
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Excel export failed" });
+  }
+};
+
+/**
+ * @desc    Export All Swearing Preferences as Word
+ * @route   GET /api/v1/swearing-preferences/export-word
+ */
+export const exportPreferencesWord = async (req: Request, res: Response) => {
+  try {
+    const { rows } = await db.query(`
+      SELECT sp.ceremony_choice, sp.religious_text, u.full_name 
+      FROM swearing_preferences sp
+      JOIN users u ON sp.user_id = u.id
+      ORDER BY u.full_name ASC
+    `);
+
+    const tableRows = [
+  new TableRow({
+    children: [
+      new TableCell({
+        children: [
+          new Paragraph({
+            children: [new TextRun({ text: "Judge Name", bold: true })],
+          }),
+        ],
+      }),
+      new TableCell({
+        children: [
+          new Paragraph({
+            children: [new TextRun({ text: "Ceremony Choice", bold: true })],
+          }),
+        ],
+      }),
+      new TableCell({
+        children: [
+          new Paragraph({
+            children: [new TextRun({ text: "Religious Text", bold: true })],
+          }),
+        ],
+      }),
+    ],
+  }),
+];
+
+    rows.forEach((row) => {
+      tableRows.push(
+        new TableRow({
+          children: [
+            new TableCell({ children: [new Paragraph(row.full_name)] }),
+            new TableCell({ children: [new Paragraph(row.ceremony_choice.toUpperCase())] }),
+            new TableCell({ children: [new Paragraph(row.religious_text || "N/A")] }),
+          ],
+        })
+      );
+    });
+
+    const doc = new Document({
+      sections: [{
+        children: [
+          new Paragraph({ text: "Judiciary Swearing Preferences Registry", heading: HeadingLevel.HEADING_1, alignment: AlignmentType.CENTER }),
+          new Paragraph({ text: `Generated on: ${new Date().toDateString()}`, alignment: AlignmentType.CENTER }),
+          new Paragraph({ text: "" }), // Spacer
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: tableRows,
+          }),
+        ],
+      }],
+    });
+
+    const buffer = await Packer.toBuffer(doc);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    res.setHeader("Content-Disposition", `attachment; filename=Swearing_Preferences_${Date.now()}.docx`);
+    res.send(buffer);
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Word export failed" });
   }
 };
