@@ -241,15 +241,18 @@ export const generatePreferencesHtml = (rows: any[]) => {
 
       <div class="letterhead">
         <!-- LEFT: Logos -->
-<div class="letterhead-left">
-  <div class="logo-group">
-    <img 
-      class="logo-img" 
-      src="https://res.cloudinary.com/do0yflasl/image/upload/v1770035125/JOB_LOGO_qep9lj.jpg" 
-      alt="Office of the Registrar High Court - Republic of Kenya"
-    />
-  </div>
-</div>
+        <div class="letterhead-left">
+          <div class="logo-group">
+            <!--
+              Replace these <img> tags with real logo paths, e.g.:
+              <img class="logo-img" src="https://highcourtonboardingportal.vercel.app/assets/JOB_LOGO-BVSN6J2X.jpg" alt="Republic of Kenya">
+       
+            -->
+            <div style="font-size:7pt;color:#aaa;text-align:center;width:60px;line-height:1.4;">REPUBLIC<br>OF KENYA<br>[LOGO]</div>
+            <div class="logo-divider"></div>
+            <div style="font-size:7pt;color:#aaa;text-align:center;width:60px;line-height:1.4;">JUDICIARY<br>[SEAL]</div>
+          </div>
+        </div>
 
         <!-- CENTER: Title block -->
         <div class="letterhead-center">
