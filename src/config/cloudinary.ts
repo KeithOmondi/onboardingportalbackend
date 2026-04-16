@@ -12,32 +12,43 @@ cloudinary.config({
 
 /**
  * Uploads a buffer-based file (from Multer) to Cloudinary.
- * Handles both Images and Videos with specific optimizations.
+ * Handles Images, Videos, and PDFs with specific optimizations.
  */
 export const uploadToCloudinary = (
   file: Express.Multer.File,
   folder: string,
-  forcedType?: "image" | "video" | "auto" // Optional override if needed
+  forcedType?: "image" | "video" | "raw" | "auto"
 ): Promise<UploadApiResponse> => {
   return new Promise((resolve, reject) => {
     const isVideo = file.mimetype.startsWith("video");
+    const isPdf = file.mimetype === "application/pdf";
+
+    // 1. Determine the correct resource_type
+    // PDFs are best handled as 'raw' or 'auto' to preserve document integrity
+    let resourceType: "image" | "video" | "raw" | "auto" = "auto";
+    if (isPdf) resourceType = "raw";
+    if (isVideo) resourceType = "video";
 
     const options: UploadApiOptions = {
       folder: folder,
-      resource_type: forcedType || "auto", // Uses auto-detection by default
+      resource_type: forcedType || resourceType,
     };
 
+    // 2. Apply type-specific logic
     if (isVideo) {
-      // ── VIDEO OPTIMIZATIONS ──
       options.transformation = [
-        { streaming_profile: "hd", format: "m3u8" }, // Adaptive bitrate streaming
+        { streaming_profile: "hd", format: "m3u8" },
         { quality: "auto" }
       ];
       options.eager = [
         { width: 720, height: 480, crop: "pad", video_codec: "h264" },
-        { format: "jpg", resource_type: "video", frames: 1 } // Frame for video preview
+        { format: "jpg", resource_type: "video", frames: 1 }
       ];
-      options.eager_async = true; // Background processing so request doesn't timeout
+      options.eager_async = true;
+    } else if (isPdf) {
+      // ── PDF SPECIFIC ──
+      // We avoid transformations to ensure the PDF stays a valid PDF file
+      options.flags = "attachment"; 
     } else {
       // ── IMAGE OPTIMIZATIONS ──
       options.transformation = [
@@ -49,12 +60,11 @@ export const uploadToCloudinary = (
       options,
       (error, result) => {
         if (error) return reject(error);
-        if (!result) return reject(new Error("Cloudinary upload failed - no result returned"));
+        if (!result) return reject(new Error("Cloudinary upload failed"));
         resolve(result);
       },
     );
 
-    // Stream the buffer to Cloudinary
     const stream = Readable.from(file.buffer);
     
     stream.on("error", (err) => {

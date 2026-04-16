@@ -38,7 +38,7 @@ router.post(
   "/create",
   isAuthenticatedUser,
   authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN),
-  upload.single("file"), // Matches the key in your FormData (image or video)
+  upload.array("file"), // Matches the key in your FormData (image or video)
   createGalleryItem,
 );
 
