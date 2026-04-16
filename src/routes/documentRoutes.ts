@@ -37,11 +37,12 @@ router
   .post(upload.single("file"), documentController.createDocument);
 
 /**
- * @route   GET /api/v1/documents/view/:id
- * @desc    Proxy document stream from Cloudinary to bypass iframe/auth restrictions
- * @access  Private (Admin/Registrar/Judge)
+ * @route   GET /api/v1/documents/stream/:id
+ * @desc    Proxy document stream from Cloudinary with Ownership Verification
+ * @access  Private (Verified Admin/Registrar/Judge)
  */
-router.get("/view/:id", documentController.proxyDocument);
+// Changed from /view/:id to /stream/:id to match your new naming convention
+router.get("/stream/:id", documentController.streamFile);
 
 /**
  * @route   DELETE /api/v1/documents/:id

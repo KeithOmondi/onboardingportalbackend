@@ -10,7 +10,7 @@ import { uploadToCloudinary } from "../config/cloudinary";
 export enum MediaType {
   IMAGE = "IMAGE",
   VIDEO = "VIDEO",
-  DOCUMENT = "DOCUMENT" // Included for future-proofing
+  DOCUMENT = "DOCUMENT"
 }
 
 /**
@@ -28,7 +28,7 @@ export interface IGalleryItem {
 
 /**
  * @desc    Get all gallery items
- * @route   GET /api/v1/gallery
+ * @route   GET /api/v1/gallery/get
  */
 export const getGallery = catchAsync(async (req: Request, res: Response) => {
   const result = await pool.query(
@@ -43,49 +43,65 @@ export const getGallery = catchAsync(async (req: Request, res: Response) => {
 });
 
 /**
- * @desc    Create Gallery Item (Image or Video)
- * @route   POST /api/v1/gallery
+ * @desc    Create multiple Gallery Items (Batch Upload)
+ * @route   POST /api/v1/gallery/create
  */
-export const createGalleryItem = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+export const createGalleryItems = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
   const { title, description } = req.body;
+  
+  // Access multiple files provided by multer.array()
+  const files = req.files as Express.Multer.File[];
 
-  if (!req.file) {
-    return next(new ErrorHandler("Please upload a file", 400));
+  if (!files || files.length === 0) {
+    return next(new ErrorHandler("Please upload at least one file", 400));
   }
 
-  // 1. Auto-detect type from mimetype
-  const isVideo = req.file.mimetype.startsWith("video");
-  const detectedType = isVideo ? MediaType.VIDEO : MediaType.IMAGE;
+  // 1. Map through files and upload to Cloudinary concurrently
+  const uploadPromises = files.map(async (file) => {
+    const isVideo = file.mimetype.startsWith("video");
+    const detectedType = isVideo ? MediaType.VIDEO : MediaType.IMAGE;
 
-  // 2. Upload to Cloudinary with correct resource type
-  const uploadRes = await uploadToCloudinary(
-    req.file, 
-    "judiciary_gallery", 
-    isVideo ? "video" : "image"
-  );
+    const uploadRes = await uploadToCloudinary(
+      file, 
+      "judiciary_gallery", 
+      isVideo ? "video" : "image"
+    );
 
-  // 3. Save to database
-  const result = await pool.query(
-    `INSERT INTO gallery (title, description, file_url, file_type, mime_type) 
-     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-    [
-      title || "Untitled",
-      description || null,
-      uploadRes.secure_url,
-      detectedType,
-      req.file.mimetype
-    ]
-  );
+    return {
+      title: title || "Untitled",
+      description: description || null,
+      file_url: uploadRes.secure_url,
+      file_type: detectedType,
+      mime_type: file.mimetype
+    };
+  });
+
+  const uploadedItems = await Promise.all(uploadPromises);
+
+  // 2. Prepare for batch insertion into PostgreSQL
+  const values: any[] = [];
+  const placeholders = uploadedItems.map((item, index) => {
+    const offset = index * 5;
+    values.push(item.title, item.description, item.file_url, item.file_type, item.mime_type);
+    return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5})`;
+  }).join(", ");
+
+  const query = `
+    INSERT INTO gallery (title, description, file_url, file_type, mime_type) 
+    VALUES ${placeholders} RETURNING *`;
+
+  const result = await pool.query(query, values);
 
   res.status(201).json({
     status: "success",
-    data: result.rows[0],
+    count: result.rowCount,
+    data: result.rows,
   });
 });
 
 /**
  * @desc    Delete Gallery Item
- * @route   DELETE /api/v1/gallery/:id
+ * @route   DELETE /api/v1/gallery/delete/:id
  */
 export const deleteGalleryItem = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
   const { id } = req.params;

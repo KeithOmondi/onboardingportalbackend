@@ -1,7 +1,7 @@
 import { Router } from "express";
 import {
   getGallery,
-  createGalleryItem,
+  createGalleryItems, // Correctly matches the plural export above
   deleteGalleryItem,
 } from "../controllers/gallery.controller";
 import {
@@ -14,8 +14,8 @@ import { upload } from "../middleware/upload";
 const router = Router();
 
 /**
- * PUBLIC ROUTES
- * Anyone can view the gallery
+ * @desc    Get all gallery items
+ * @access  Authenticated (Super Admin, Admin, Registrar, Judge)
  */
 router.get(
   "/get",
@@ -30,18 +30,22 @@ router.get(
 );
 
 /**
- * PROTECTED ROUTES
- * Only authenticated Admins can modify the gallery
+ * @desc    Create multiple Gallery Items (Batch Upload)
+ * @access  Protected (Super Admin, Admin)
  */
-
 router.post(
   "/create",
   isAuthenticatedUser,
   authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN),
-  upload.array("file"), // Matches the key in your FormData (image or video)
-  createGalleryItem,
+  // Matches the 'file' key and allows up to 10 images/videos
+  upload.array("file", 10), 
+  createGalleryItems,
 );
 
+/**
+ * @desc    Delete a specific Gallery Item
+ * @access  Protected (Super Admin only)
+ */
 router.delete(
   "/delete/:id",
   isAuthenticatedUser,
