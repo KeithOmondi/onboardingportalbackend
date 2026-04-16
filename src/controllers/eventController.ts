@@ -5,16 +5,28 @@ import ErrorHandler from "../utils/ErrorHandler";
 import { IGetEventsQuery, IJudicialEvent } from "../interfaces/events.interface";
 
 /**
- * @desc Get judicial events with dynamic status filtering
+ * @desc Get judicial events with automatic status calculation
+ * Logic: Compares start/end times against DB NOW() to determine status on-the-fly.
  */
 export const getEvents = catchAsync(async (req: Request<{}, {}, {}, IGetEventsQuery>, res: Response, next: NextFunction) => {
   const { status, search } = req.query;
 
-  // Base query
-  let query = `SELECT * FROM judicial_events WHERE 1=1`;
+  // 1. Base Query with Virtual Status Columns
+  // We use PostgreSQL's NOW() to ensure the server clock is the single source of truth.
+  let query = `
+    SELECT *, 
+    (end_time < NOW()) as is_past,
+    CASE 
+      WHEN start_time > NOW() THEN 'UPCOMING'
+      WHEN end_time < NOW() THEN 'PAST'
+      ELSE 'ONGOING'
+    END as current_status
+    FROM judicial_events 
+    WHERE 1=1`;
+  
   const values: any[] = [];
 
-  // 1. Filter by Status (Dynamic comparison against database time)
+  // 2. Dynamic Filtering
   if (status && status !== 'ALL') {
     if (status === 'UPCOMING') {
       query += ` AND start_time > NOW()`;
@@ -25,14 +37,15 @@ export const getEvents = catchAsync(async (req: Request<{}, {}, {}, IGetEventsQu
     }
   }
 
-  // 2. Filter by Search (Case-insensitive)
+  // 3. Search Implementation
   if (search) {
     values.push(`%${search}%`);
     query += ` AND (title ILIKE $${values.length} OR organizer ILIKE $${values.length})`;
   }
 
-  // Sort by earliest start time
-  query += ` ORDER BY start_time ASC`;
+  // 4. Sorting
+  // Orders active/upcoming events first, then sorts by time
+  query += ` ORDER BY is_past ASC, start_time ASC`;
 
   const result = await pool.query(query, values);
   
@@ -44,42 +57,75 @@ export const getEvents = catchAsync(async (req: Request<{}, {}, {}, IGetEventsQu
 });
 
 /**
- * @desc Create a new judicial event (Admin only)
+ * @desc Create a new judicial event
  */
 export const createEvent = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
   const { 
-    title, 
-    description, 
-    location, 
-    start_time, 
-    end_time, 
-    is_virtual, 
-    organizer 
+    title, description, location, 
+    start_time, end_time, is_virtual, organizer 
   }: IJudicialEvent = req.body;
 
-  // Basic validation check before hitting DB
-  if (!title || !start_time || !end_time) {
-    return next(new ErrorHandler("Please provide title, start time, and end time", 400));
+  // Validation: End time must be after start time
+  if (new Date(start_time) >= new Date(end_time)) {
+    return next(new ErrorHandler("Event end time must be after the start time", 400));
   }
 
   const query = `
     INSERT INTO judicial_events 
     (title, description, location, start_time, end_time, is_virtual, organizer)
     VALUES ($1, $2, $3, $4, $5, $6, $7)
-    RETURNING *`;
+    RETURNING *, (end_time < NOW()) as is_past`;
   
   const result = await pool.query(query, [
-    title, 
-    description, 
-    location, 
-    start_time, 
-    end_time, 
-    is_virtual || false, 
-    organizer
+    title, description, location, 
+    start_time, end_time, is_virtual || false, organizer
   ]);
 
   res.status(201).json({ 
     status: "success", 
+    data: result.rows[0] 
+  });
+});
+
+/**
+ * @desc Update an existing judicial event
+ */
+export const updateEvent = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+  const { 
+    title, description, location, 
+    start_time, end_time, is_virtual, organizer 
+  }: Partial<IJudicialEvent> = req.body;
+
+  // Check existence
+  const checkEvent = await pool.query("SELECT id FROM judicial_events WHERE id = $1", [id]);
+  if (checkEvent.rowCount === 0) {
+    return next(new ErrorHandler("Judicial event record not found", 404));
+  }
+
+  // Atomic Update with automatic updated_at and is_past calculation
+  const query = `
+    UPDATE judicial_events 
+    SET 
+      title = COALESCE($1, title),
+      description = COALESCE($2, description),
+      location = COALESCE($3, location),
+      start_time = COALESCE($4, start_time),
+      end_time = COALESCE($5, end_time),
+      is_virtual = COALESCE($6, is_virtual),
+      organizer = COALESCE($7, organizer),
+      updated_at = NOW()
+    WHERE id = $8
+    RETURNING *, (end_time < NOW()) as is_past`;
+
+  const result = await pool.query(query, [
+    title, description, location, 
+    start_time, end_time, is_virtual, organizer, id
+  ]);
+
+  res.status(200).json({ 
+    status: "success", 
+    message: "Event updated successfully",
     data: result.rows[0] 
   });
 });
@@ -99,61 +145,5 @@ export const deleteEvent = catchAsync(async (req: Request, res: Response, next: 
   res.status(204).json({
     status: "success",
     data: null
-  });
-});
-
-/**
- * @desc Update an existing judicial event (Admin only)
- */
-export const updateEvent = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
-  const { id } = req.params;
-  const { 
-    title, 
-    description, 
-    location, 
-    start_time, 
-    end_time, 
-    is_virtual, 
-    organizer 
-  }: Partial<IJudicialEvent> = req.body;
-
-  // 1. Check if the event exists first
-  const checkEvent = await pool.query("SELECT id FROM judicial_events WHERE id = $1", [id]);
-  
-  if (checkEvent.rowCount === 0) {
-    return next(new ErrorHandler("Judicial event record not found", 404));
-  }
-
-  // 2. Perform the update
-  // We use COALESCE to keep existing values if the update field is undefined
-  const query = `
-    UPDATE judicial_events 
-    SET 
-      title = COALESCE($1, title),
-      description = COALESCE($2, description),
-      location = COALESCE($3, location),
-      start_time = COALESCE($4, start_time),
-      end_time = COALESCE($5, end_time),
-      is_virtual = COALESCE($6, is_virtual),
-      organizer = COALESCE($7, organizer),
-      updated_at = NOW()
-    WHERE id = $8
-    RETURNING *`;
-
-  const result = await pool.query(query, [
-    title, 
-    description, 
-    location, 
-    start_time, 
-    end_time, 
-    is_virtual, 
-    organizer,
-    id
-  ]);
-
-  res.status(200).json({ 
-    status: "success", 
-    message: "Event updated successfully",
-    data: result.rows[0] 
   });
 });
