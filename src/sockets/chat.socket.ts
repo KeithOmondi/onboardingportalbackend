@@ -2,6 +2,7 @@ import { Server, Socket } from "socket.io";
 import { Server as HttpServer } from "http";
 import config from "../config/env";
 import pool from "../config/db";
+import { sendPushToAdmins, sendPushToUser } from "../controllers/push.controller";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -119,24 +120,18 @@ const persistUserMessage = async (
   }
 };
 
+// ── Push helper ───────────────────────────────────────────────
+
+const truncate = (text: string, max = 80): string =>
+  text.length > max ? text.slice(0, max - 3) + "..." : text;
+
 // ── conversation:updated emitter ──────────────────────────────
 
-/**
- * Builds a ConversationUpdatedPayload from a saved message and fans it out
- * to all parties who need to re-sort their conversation list or bump a badge.
- *
- * Convention: conversationId is ALWAYS the non-admin user's id so both
- * the admin panel and the user's client share the same stable key.
- *
- *   single    → the non-admin is either the sender or the recipient
- *   broadcast → no single user; conversationId is "broadcast"
- *   group     → no single user; conversationId is "group:<roles>"
- */
 const emitConversationUpdated = (
   io: Server,
   saved: ChatMessageDB,
   adminRoom: string,
-  nonAdminUserId?: string   // caller supplies this; avoids re-deriving it here
+  nonAdminUserId?: string
 ) => {
   const conversationId =
     saved.recipient_type === "single"
@@ -158,19 +153,13 @@ const emitConversationUpdated = (
 
   switch (saved.recipient_type) {
     case "single":
-      // Notify the non-admin user (badge++ if their convo isn't open)
       if (nonAdminUserId) io.to(nonAdminUserId).emit("conversation:updated", payload);
-      // Notify all admins (re-sort their inbox)
       io.to(adminRoom).emit("conversation:updated", payload);
       break;
-
     case "broadcast":
-      // Every connected socket needs to re-sort
       io.emit("conversation:updated", payload);
       break;
-
     case "group":
-      // Only the targeted role rooms + admins
       if (saved.target_roles) {
         saved.target_roles.forEach((r) =>
           io.to(`role:${r}`).emit("conversation:updated", payload)
@@ -183,8 +172,6 @@ const emitConversationUpdated = (
 
 // ── Socket server ─────────────────────────────────────────────
 
-// ... (Keep existing imports and DB helpers)
-
 export const initSocket = (httpServer: HttpServer) => {
   const io = new Server(httpServer, {
     cors: { origin: config.FRONTEND_URL, credentials: true },
@@ -193,7 +180,11 @@ export const initSocket = (httpServer: HttpServer) => {
   const ADMIN_ROOM = "admin-support";
 
   io.on("connection", (socket: Socket) => {
-    const { userId, role, name } = socket.handshake.query as any;
+    const { userId, role, name } = socket.handshake.query as {
+      userId: string;
+      role: string;
+      name: string;
+    };
     if (!userId || !role) return socket.disconnect();
 
     const session = { userId, role, name };
@@ -209,35 +200,70 @@ export const initSocket = (httpServer: HttpServer) => {
       const saved = await persistSingle(data);
       if (!saved) return socket.emit("admin:message:error", { _tempId: data._tempId });
 
-      io.to(data.recipientId).emit("user:receive", saved); // Direct event
+      io.to(data.recipientId).emit("user:receive", saved);
       socket.emit("admin:message:sent", saved);
       emitConversationUpdated(io, saved, ADMIN_ROOM, data.recipientId);
+
+      // Push notification to the recipient — fires even if their tab is closed
+      sendPushToUser(data.recipientId, {
+        title: "Message from ORHC Admin",
+        body: truncate(data.message),
+        url: "/judge/dashboard",
+      }).catch((err: unknown) =>
+        console.error("[Push] admin:message:single failed:", err)
+      );
     });
 
-    // ── Admin → broadcast (BROADCAST) ────────────────────────
+    // ── Admin → broadcast ─────────────────────────────────────
     socket.on("admin:message:broadcast", async (data: AdminBroadcastDTO) => {
       if (!isAdmin) return;
       const saved = await persistBroadcast({ ...data, recipientType: "broadcast" });
       if (!saved) return socket.emit("admin:message:error", { _tempId: data._tempId });
 
-      io.emit("broadcast:receive", saved); // Specific Broadcast event
+      io.emit("broadcast:receive", saved);
       socket.emit("admin:message:sent", saved);
       emitConversationUpdated(io, saved, ADMIN_ROOM);
+
+      // No push for broadcast — too broad and likely spammy
     });
 
-    // ── Admin → group (BROADCAST for specific roles) ──────────
+    // ── Admin → group (role-based broadcast) ──────────────────
     socket.on("admin:message:group", async (data: AdminBroadcastDTO) => {
       if (!isAdmin) return;
       const saved = await persistBroadcast({ ...data, recipientType: "group" });
       if (!saved) return socket.emit("admin:message:error", { _tempId: data._tempId });
 
       if (saved.target_roles) {
-        // Targeted Broadcast event
         saved.target_roles.forEach((r) => io.to(`role:${r}`).emit("broadcast:receive", saved));
       }
       io.to(ADMIN_ROOM).emit("admin:receive", saved);
       socket.emit("admin:message:sent", saved);
       emitConversationUpdated(io, saved, ADMIN_ROOM);
+
+      // Push each user whose role is in target_roles
+      if (saved.target_roles && saved.target_roles.length > 0) {
+        pool
+          .query(
+            `SELECT id FROM users
+             WHERE role = ANY($1::text[])
+               AND is_verified = true`,
+            [saved.target_roles]
+          )
+          .then(({ rows }) =>
+            Promise.allSettled(
+              rows.map((row: { id: string }) =>
+                sendPushToUser(row.id, {
+                  title: "New message from ORHC Admin",
+                  body: truncate(data.message),
+                  url: "/judge/dashboard",
+                })
+              )
+            )
+          )
+          .catch((err: unknown) =>
+            console.error("[Push] admin:message:group failed:", err)
+          );
+      }
     });
 
     // ── User → Admin (DIRECT) ─────────────────────────────────
@@ -249,6 +275,15 @@ export const initSocket = (httpServer: HttpServer) => {
       io.to(ADMIN_ROOM).emit("admin:receive", saved);
       socket.emit("user:message:sent", saved);
       emitConversationUpdated(io, saved, ADMIN_ROOM, session.userId);
+
+      // Push notification to all admins — fires even if their browser is closed
+      sendPushToAdmins({
+        title: `New message from ${session.name}`,
+        body: truncate(data.message),
+        url: "/superadmin/messages",
+      }).catch((err: unknown) =>
+        console.error("[Push] user:message push failed:", err)
+      );
     });
   });
 
