@@ -486,3 +486,43 @@ export const exportAllGuestListsWord = catchAsync(
     res.send(buffer);
   }
 );
+
+export const updateGuest = catchAsync(async (req: any, res: Response, next: NextFunction) => {
+  const { id } = req.params; // The individual guest ID
+  const userId = req.user.id;
+  const { name, type, gender, id_number, birth_cert_number, phone, email } = req.body;
+
+  // 1. Verify ownership: Ensure this guest belongs to a registration owned by the current user
+  // and check if the registration is still in 'DRAFT' status
+  const ownershipCheck = await pool.query(
+    `SELECT r.status 
+     FROM guests g
+     JOIN registrations r ON g.registration_id = r.id
+     WHERE g.id = $1 AND r.user_id = $2`,
+    [id, userId]
+  );
+
+  if (ownershipCheck.rowCount === 0) {
+    return next(new ErrorHandler("Guest record not found or unauthorized", 404));
+  }
+
+  if (ownershipCheck.rows[0].status === "SUBMITTED") {
+    return next(new ErrorHandler("Cannot update guests on a submitted registry", 400));
+  }
+
+  // 2. Perform the update
+  const updatedGuest = await pool.query(
+    `UPDATE guests 
+     SET name = $1, type = $2, gender = $3, id_number = $4, 
+         birth_cert_number = $5, phone = $6, email = $7, updated_at = NOW()
+     WHERE id = $8
+     RETURNING *`,
+    [name, type, gender, id_number, birth_cert_number, phone, email, id]
+  );
+
+  res.status(200).json({
+    status: "success",
+    message: "Guest updated successfully",
+    data: updatedGuest.rows[0],
+  });
+});

@@ -10,7 +10,8 @@ import {
   getGuestListById,
   exportAllGuestLists,      // PDF
   exportAllGuestListsExcel, // Excel
-  exportAllGuestListsWord,  // Word
+  exportAllGuestListsWord,
+  updateGuest,  // Word
 } from "../controllers/guests.controller";
 import { authorizeRoles, isAuthenticatedUser } from "../middleware/authMiddleware";
 import { UserRole } from "../interfaces/user.interface";
@@ -98,5 +99,11 @@ router.get(
   authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN), 
   downloadJudgeGuestPDF
 );
+
+// Assuming you have your router initialized
+router.patch("/update-guest/:id", 
+  isAuthenticatedUser, 
+  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN),  
+  updateGuest);
 
 export default router;
