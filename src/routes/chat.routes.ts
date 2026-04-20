@@ -8,6 +8,7 @@ import {
   getJudgeSent,
   getJudgeInbox,
   getInbox,
+  markAsRead,
 } from "../controllers/chat.controller";
 import {
   authorizeRoles,
@@ -35,9 +36,13 @@ router.get(
   authorizeRoles(UserRole.ADMIN, UserRole.SUPER_ADMIN),
   getBroadcasts
 );
+router.post(
+  "/read/:userId",
+  authorizeRoles(UserRole.ADMIN, UserRole.SUPER_ADMIN),
+  markAsRead
+);
 
 // ── Broadcast history — ALL authenticated roles ────────────────────────────
-// FIXED: single registration that includes every role that needs this endpoint
 router.get(
   "/broadcast/history",
   authorizeRoles(

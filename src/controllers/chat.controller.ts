@@ -6,7 +6,7 @@ import catchAsync from "../utils/catchAsync";
 
 // ─── ADMIN ENDPOINTS ──────────────────────────────────────────────────────────
 
-// @desc   Get all users the admin can message + their last message timestamp
+// @desc   Get all users the admin can message + their last message timestamp + unread count
 // @route  GET /api/v1/chat/recipients
 export const getRecipients = catchAsync(async (req: Request, res: Response) => {
   const adminId = (req as any).user.id;
@@ -19,7 +19,17 @@ export const getRecipients = catchAsync(async (req: Request, res: Response) => {
        u.role,
        u.avatar_url,
        -- Latest activity timestamp for this conversation (either direction)
-       MAX(cm.created_at) AS "lastMessageAt"
+       MAX(cm.created_at) AS "lastMessageAt",
+       -- Count messages sent BY this user TO admin that have not been read yet
+       COUNT(
+         CASE
+           WHEN cm.sender_id = u.id
+            AND cm.recipient_id IS NULL
+            AND cm.recipient_type = 'single'
+            AND cm.is_read = false
+           THEN 1
+         END
+       )::int AS "unreadCount"
      FROM users u
      LEFT JOIN chat_messages cm
        ON cm.recipient_type = 'single'
@@ -41,6 +51,24 @@ export const getRecipients = catchAsync(async (req: Request, res: Response) => {
     status: "success",
     recipients: result.rows,
   });
+});
+
+// @desc   Mark all messages from a specific user as read
+// @route  POST /api/v1/chat/read/:userId
+export const markAsRead = catchAsync(async (req: Request, res: Response) => {
+  const { userId } = req.params;
+
+  await pool.query(
+    `UPDATE chat_messages
+     SET is_read = true
+     WHERE sender_id = $1
+       AND recipient_id IS NULL
+       AND recipient_type = 'single'
+       AND is_read = false`,
+    [userId]
+  );
+
+  res.status(200).json({ status: "success" });
 });
 
 // @desc   Get full conversation thread between admin and a specific user
