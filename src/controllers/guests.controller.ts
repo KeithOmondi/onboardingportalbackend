@@ -76,11 +76,43 @@ export const getMyGuestList = catchAsync(async (req: any, res: Response) => {
 
 export const deleteGuestList = catchAsync(async (req: any, res: Response, next: NextFunction) => {
   const userId = req.user.id;
-  const check = await pool.query("SELECT status FROM registrations WHERE user_id = $1", [userId]);
-  if (check.rowCount === 0) return next(new ErrorHandler("Record not found", 404));
-  if (check.rows[0].status === "SUBMITTED") return next(new ErrorHandler("Cannot delete a submitted registry", 400));
-  await pool.query("DELETE FROM registrations WHERE user_id = $1", [userId]);
-  res.status(204).json({ status: "success", data: null });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // 1. Get the registration ID first
+    const regCheck = await client.query(
+      "SELECT id, status FROM registrations WHERE user_id = $1", 
+      [userId]
+    );
+
+    if (regCheck.rowCount === 0) {
+      return next(new ErrorHandler("No registry found to delete", 404));
+    }
+
+    if (regCheck.rows[0].status === "SUBMITTED") {
+      return next(new ErrorHandler("Cannot delete a finalized registry", 400));
+    }
+
+    const registrationId = regCheck.rows[0].id;
+
+    // 2. Delete the children first (Guests)
+    await client.query("DELETE FROM guests WHERE registration_id = $1", [registrationId]);
+
+    // 3. Delete the parent (Registration)
+    await client.query("DELETE FROM registrations WHERE id = $1", [registrationId]);
+
+    await client.query("COMMIT");
+    
+    // Change to 200 so Redux definitely sees the success body
+    res.status(200).json({ status: "success", message: "Registry wiped successfully" });
+  } catch (error: any) {
+    await client.query("ROLLBACK");
+    return next(new ErrorHandler(error.message, 500));
+  } finally {
+    client.release();
+  }
 });
 
 export const addGuests = catchAsync(async (req: any, res: Response, next: NextFunction) => {
