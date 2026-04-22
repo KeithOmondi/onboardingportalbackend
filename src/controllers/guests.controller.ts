@@ -21,12 +21,12 @@ export const saveGuestList = catchAsync(async (req: any, res: Response, next: Ne
   try {
     await client.query("BEGIN");
     const regRes = await client.query(
-      `INSERT INTO registrations (user_id, status, updated_at) 
-       VALUES ($1, 'DRAFT', NOW()) 
-       ON CONFLICT (user_id) DO UPDATE SET updated_at = NOW() 
-       RETURNING id, status`,
-      [userId]
-    );
+  `INSERT INTO registrations (user_id, status, updated_at) 
+   VALUES ($1, 'DRAFT', NOW()) 
+   ON CONFLICT (user_id) DO UPDATE SET status = 'DRAFT', updated_at = NOW()
+   RETURNING id, status`,
+  [userId]
+);
 
     const registrationId = regRes.rows[0].id;
     await client.query("DELETE FROM guests WHERE registration_id = $1", [registrationId]);
@@ -488,12 +488,11 @@ export const exportAllGuestListsWord = catchAsync(
 );
 
 export const updateGuest = catchAsync(async (req: any, res: Response, next: NextFunction) => {
-  const { id } = req.params; // The individual guest ID
+  const { id } = req.params;
   const userId = req.user.id;
   const { name, type, gender, id_number, birth_cert_number, phone, email } = req.body;
 
-  // 1. Verify ownership: Ensure this guest belongs to a registration owned by the current user
-  // and check if the registration is still in 'DRAFT' status
+  // Verify ownership only — no status lock
   const ownershipCheck = await pool.query(
     `SELECT r.status 
      FROM guests g
@@ -506,11 +505,6 @@ export const updateGuest = catchAsync(async (req: any, res: Response, next: Next
     return next(new ErrorHandler("Guest record not found or unauthorized", 404));
   }
 
-  if (ownershipCheck.rows[0].status === "SUBMITTED") {
-    return next(new ErrorHandler("Cannot update guests on a submitted registry", 400));
-  }
-
-  // 2. Perform the update
   const updatedGuest = await pool.query(
     `UPDATE guests 
      SET name = $1, type = $2, gender = $3, id_number = $4, 
@@ -525,4 +519,26 @@ export const updateGuest = catchAsync(async (req: any, res: Response, next: Next
     message: "Guest updated successfully",
     data: updatedGuest.rows[0],
   });
+});
+
+export const deleteGuest = catchAsync(async (req: any, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+  const userId = req.user.id;
+
+  // Verify ownership only — no status lock
+  const ownershipCheck = await pool.query(
+    `SELECT r.status 
+     FROM guests g
+     JOIN registrations r ON g.registration_id = r.id
+     WHERE g.id = $1 AND r.user_id = $2`,
+    [id, userId]
+  );
+
+  if (ownershipCheck.rowCount === 0) {
+    return next(new ErrorHandler("Guest record not found or unauthorized", 404));
+  }
+
+  await pool.query("DELETE FROM guests WHERE id = $1", [id]);
+
+  res.status(204).json({ status: "success", data: null });
 });

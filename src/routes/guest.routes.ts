@@ -8,12 +8,16 @@ import {
   getAllGuestLists,
   downloadJudgeGuestPDF,
   getGuestListById,
-  exportAllGuestLists,      // PDF
+  exportAllGuestLists, // PDF
   exportAllGuestListsExcel, // Excel
   exportAllGuestListsWord,
-  updateGuest,  // Word
+  updateGuest,
+  deleteGuest, // Word
 } from "../controllers/guests.controller";
-import { authorizeRoles, isAuthenticatedUser } from "../middleware/authMiddleware";
+import {
+  authorizeRoles,
+  isAuthenticatedUser,
+} from "../middleware/authMiddleware";
 import { UserRole } from "../interfaces/user.interface";
 
 const router = Router();
@@ -28,7 +32,6 @@ router.patch("/add", isAuthenticatedUser, addGuests);
 router.get("/me", isAuthenticatedUser, getMyGuestList);
 router.delete("/delete", isAuthenticatedUser, deleteGuestList);
 
-
 /* =====================================================
     ADMIN ROUTES (Super Admin & Admin only)
    ===================================================== */
@@ -38,10 +41,10 @@ router.delete("/delete", isAuthenticatedUser, deleteGuestList);
  * @desc    Get overview of all guest registrations
  */
 router.get(
-  "/admin/all", 
-  isAuthenticatedUser, 
-  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN), 
-  getAllGuestLists
+  "/admin/all",
+  isAuthenticatedUser,
+  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN),
+  getAllGuestLists,
 );
 
 /**
@@ -52,7 +55,7 @@ router.get(
   "/admin/export-all",
   isAuthenticatedUser,
   authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN),
-  exportAllGuestLists
+  exportAllGuestLists,
 );
 
 /**
@@ -63,7 +66,7 @@ router.get(
   "/admin/export-excel",
   isAuthenticatedUser,
   authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN),
-  exportAllGuestListsExcel
+  exportAllGuestListsExcel,
 );
 
 /**
@@ -74,7 +77,7 @@ router.get(
   "/admin/export-word",
   isAuthenticatedUser,
   authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN),
-  exportAllGuestListsWord
+  exportAllGuestListsWord,
 );
 
 /**
@@ -86,7 +89,7 @@ router.get(
   "/admin/:id",
   isAuthenticatedUser,
   authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN),
-  getGuestListById
+  getGuestListById,
 );
 
 /**
@@ -94,16 +97,20 @@ router.get(
  * @desc    Generate and download PDF Report for a specific Judge
  */
 router.get(
-  "/report/:userId", 
-  isAuthenticatedUser, 
-  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN), 
-  downloadJudgeGuestPDF
+  "/report/:userId",
+  isAuthenticatedUser,
+  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN),
+  downloadJudgeGuestPDF,
 );
 
 // Assuming you have your router initialized
-router.patch("/update-guest/:id", 
-  isAuthenticatedUser, 
-  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN),  
-  updateGuest);
+router.patch(
+  "/update-guest/:id",
+  isAuthenticatedUser,
+  authorizeRoles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.JUDGE),
+  updateGuest,
+);
+
+router.delete("/:id", isAuthenticatedUser, deleteGuest);
 
 export default router;
