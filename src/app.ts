@@ -15,6 +15,7 @@ import eventRouter from "./routes/event.routes"
 import galleryRouter from "./routes/gallery.routes"
 import chatRoutes from "./routes/chat.routes";
 import documentRoutes from "./routes/documentRoutes"
+import emergencyRoutes from "./routes/emergency.routes"
 
 const app: Application = express();
 
@@ -43,6 +44,7 @@ app.use("/api/v1/events", eventRouter);
 app.use("/api/v1/gallery", galleryRouter);
 app.use("/api/v1/chat", chatRoutes);
 app.use("/api/v1/documents", documentRoutes);
+app.use("/api/v1/emergency", emergencyRoutes);
 
 app.use(notFound);
 app.use(globalErrorHandler);

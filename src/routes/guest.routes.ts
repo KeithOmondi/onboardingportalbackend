@@ -12,7 +12,7 @@ import {
   exportAllGuestListsExcel, // Excel
   exportAllGuestListsWord,
   updateGuest,
-  deleteGuest, // Word
+  deleteGuest,
 } from "../controllers/guests.controller";
 import {
   authorizeRoles,
@@ -112,5 +112,7 @@ router.patch(
 );
 
 router.delete("/:id", isAuthenticatedUser, deleteGuest);
+
+   
 
 export default router;

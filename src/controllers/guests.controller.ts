@@ -574,3 +574,6 @@ export const deleteGuest = catchAsync(async (req: any, res: Response, next: Next
 
   res.status(204).json({ status: "success", data: null });
 });
+
+
+
