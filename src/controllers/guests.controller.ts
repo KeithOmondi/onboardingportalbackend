@@ -74,16 +74,24 @@ export const getMyGuestList = catchAsync(async (req: any, res: Response) => {
   res.status(200).json({ status: "success", data });
 });
 
+/* =====================================================
+    USER / JUDGE HANDLERS
+===================================================== */
+
+/**
+ * Wipes the entire registry (Guests and Registration record)
+ * Updated to allow deletion even if status is 'SUBMITTED'
+ */
 export const deleteGuestList = catchAsync(async (req: any, res: Response, next: NextFunction) => {
   const userId = req.user.id;
-
   const client = await pool.connect();
+
   try {
     await client.query("BEGIN");
 
-    // 1. Get the registration ID first
+    // 1. Get the registration ID
     const regCheck = await client.query(
-      "SELECT id, status FROM registrations WHERE user_id = $1", 
+      "SELECT id FROM registrations WHERE user_id = $1", 
       [userId]
     );
 
@@ -91,13 +99,9 @@ export const deleteGuestList = catchAsync(async (req: any, res: Response, next: 
       return next(new ErrorHandler("No registry found to delete", 404));
     }
 
-    if (regCheck.rows[0].status === "SUBMITTED") {
-      return next(new ErrorHandler("Cannot delete a finalized registry", 400));
-    }
-
     const registrationId = regCheck.rows[0].id;
 
-    // 2. Delete the children first (Guests)
+    // 2. Delete the children first (Guests) to satisfy FK constraints
     await client.query("DELETE FROM guests WHERE registration_id = $1", [registrationId]);
 
     // 3. Delete the parent (Registration)
@@ -105,8 +109,10 @@ export const deleteGuestList = catchAsync(async (req: any, res: Response, next: 
 
     await client.query("COMMIT");
     
-    // Change to 200 so Redux definitely sees the success body
-    res.status(200).json({ status: "success", message: "Registry wiped successfully" });
+    res.status(200).json({ 
+      status: "success", 
+      message: "Registry and all associated guests have been deleted successfully." 
+    });
   } catch (error: any) {
     await client.query("ROLLBACK");
     return next(new ErrorHandler(error.message, 500));
@@ -553,13 +559,17 @@ export const updateGuest = catchAsync(async (req: any, res: Response, next: Next
   });
 });
 
+/**
+ * Deletes a single guest
+ * Ensure the user owns the guest record
+ */
 export const deleteGuest = catchAsync(async (req: any, res: Response, next: NextFunction) => {
   const { id } = req.params;
   const userId = req.user.id;
 
-  // Verify ownership only — no status lock
+  // Check ownership
   const ownershipCheck = await pool.query(
-    `SELECT r.status 
+    `SELECT g.id 
      FROM guests g
      JOIN registrations r ON g.registration_id = r.id
      WHERE g.id = $1 AND r.user_id = $2`,
@@ -572,7 +582,11 @@ export const deleteGuest = catchAsync(async (req: any, res: Response, next: Next
 
   await pool.query("DELETE FROM guests WHERE id = $1", [id]);
 
-  res.status(204).json({ status: "success", data: null });
+  // Using 200 instead of 204 if you want to send a JSON success message back to Redux/Frontend
+  res.status(200).json({ 
+    status: "success", 
+    message: "Guest removed from registry" 
+  });
 });
 
 
